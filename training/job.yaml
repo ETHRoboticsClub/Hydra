@@ -1,0 +1,39 @@
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: training-job
+  namespace: hydra
+spec:
+  nprocPerNode: "1"
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      restartPolicy: OnFailure
+      template:
+        spec:
+          containers:
+            - name: pytorch
+              image: our-training-image:latest
+              resources:
+                requests:
+                  cpu: "4"
+                  memory: "16Gi"
+                  nvidia.com/gpu: "1"
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                - name: checkpoints
+                  mountPath: /checkpoints
+              env:
+                - name: WANDB_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: training-secrets
+                      key: wandb-api-key
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: training-data-pvc
+            - name: checkpoints
+              persistentVolumeClaim:
+                claimName: checkpoints-pvc
