@@ -1,23 +1,40 @@
 apiVersion: kubeflow.org/v1
 kind: PyTorchJob
 metadata:
-  name: training-job
+  name: act-training
   namespace: hydra
 spec:
-  nprocPerNode: "1"
   pytorchReplicaSpecs:
     Master:
       replicas: 1
       restartPolicy: OnFailure
       template:
         spec:
+          tolerations:
+            - key: nvidia.com/gpu
+              operator: Exists
+              effect: NoSchedule
+          nodeSelector:
+            node-tier: gpum
           containers:
             - name: pytorch
-              image: our-training-image:latest
+              image: ghcr.io/ethroboticsclub/pytorch:latest
+              command: ["lerobot-train"]
+              args:
+                - --dataset.repo_id=ETHRC/towel_base_with_rewards
+                - --dataset.root=/data
+                - --dataset.local_files_only=true
+                - --policy.type=act
+                - --output_dir=/checkpoints/act
+                - --job_name=act_training
+                - --policy.device=cuda
+                - --wandb.enable=true
               resources:
                 requests:
                   cpu: "4"
                   memory: "16Gi"
+                  nvidia.com/gpu: "1"
+                limits:
                   nvidia.com/gpu: "1"
               volumeMounts:
                 - name: data
