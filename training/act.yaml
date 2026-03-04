@@ -26,12 +26,6 @@ spec:
         nvidia.com/gpu: "1"
       limits:
         nvidia.com/gpu: "1"
-    env:
-      - name: WANDB_API_KEY
-        valueFrom:
-          secretKeyRef:
-            name: training-secrets
-            key: wandb-api-key
   podTemplateOverrides:
     - targetJobs:
         - name: node
