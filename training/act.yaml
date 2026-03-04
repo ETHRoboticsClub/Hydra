@@ -34,10 +34,6 @@ spec:
           - name: checkpoints
             persistentVolumeClaim:
               claimName: testing1-checkpoints
-          - name: scripts
-            configMap:
-              name: training-scripts
-              defaultMode: 0755
         containers:
           - name: node
             volumeMounts:
@@ -45,5 +41,3 @@ spec:
                 mountPath: /data
               - name: checkpoints
                 mountPath: /checkpoints
-              - name: scripts
-                mountPath: /workspace
