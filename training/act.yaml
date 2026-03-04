@@ -8,13 +8,25 @@ spec:
     name: torch-distributed
   trainer:
     image: ghcr.io/ethroboticsclub/pytorch:latest
+<<<<<<< HEAD
     command: ["/bin/bash", "/workspace/run.sh"]
+=======
+    command: ["lerobot-train"]
+    args:
+      - --dataset.repo_id=/dataset
+      - --dataset.root=/data
+      - --dataset.local_files_only=true
+      - --policy.type=act
+      - --output_dir=/checkpoints/act
+      - --job_name=act_training
+      - --policy.device=cuda
+>>>>>>> origin/master
     numNodes: 1
     resourcesPerNode:
-      requests:
-        cpu: "4"
-        memory: "16Gi"
-        nvidia.com/gpu: "1"
+      #requests:
+      #  cpu: "4"
+      #  memory: "16Gi"
+      #  nvidia.com/gpu: "1"
       limits:
         nvidia.com/gpu: "1"
   podTemplateOverrides:
