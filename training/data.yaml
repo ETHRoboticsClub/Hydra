@@ -1,30 +1,11 @@
 apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: training-data-pv
-spec:
-  capacity:
-    storage: 100Gi
-  accessModes:
-    - ReadOnlyMany
-  csi:
-    driver: s3.csi.aws.com
-    volumeHandle: s3-training-data
-    volumeAttributes:
-      bucketName: our-bucket-name
-  mountOptions:
-    - --read-only
----
-apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: training-data-pvc
-  namespace: hydra
+  name: testing1-data
+  namespace: robot-learning
 spec:
   accessModes:
-    - ReadOnlyMany
-  storageClassName: ""
+    - ReadWriteMany
   resources:
     requests:
-      storage: 100Gi
-  volumeName: training-data-pv
+      storage: 8Gi

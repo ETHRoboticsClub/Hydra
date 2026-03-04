@@ -5,9 +5,10 @@
 aws login
 aws eks update-kubeconfig --name ethrc-prod-1 --region us-east-1
 
-# Install the Kubeflow Training Operator
+# Install the Kubeflow Trainer
 
-kubectl apply -k "github.com/kubeflow/training-operator.git/manifests/overlays/standalone?ref=v1.8.1"
+kubectl apply --server-side -k "https://github.com/kubeflow/trainer.git/manifests/overlays/manager?ref=v2.1.0"
+kubectl apply --server-side -k "https://github.com/kubeflow/trainer.git/manifests/overlays/runtimes?ref=v2.1.0"
 
 # Configure the W&B API key
 

@@ -1,56 +1,58 @@
-apiVersion: kubeflow.org/v1
-kind: PyTorchJob
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: TrainJob
 metadata:
   name: act-training
-  namespace: hydra
+  namespace: robot-learning
 spec:
-  pytorchReplicaSpecs:
-    Master:
-      replicas: 1
-      restartPolicy: OnFailure
-      template:
-        spec:
-          tolerations:
-            - key: nvidia.com/gpu
-              operator: Exists
-              effect: NoSchedule
-          nodeSelector:
-            node-tier: gpum
-          containers:
-            - name: pytorch
-              image: ghcr.io/ethroboticsclub/pytorch:latest
-              command: ["lerobot-train"]
-              args:
-                - --dataset.repo_id=ETHRC/towel_base_with_rewards
-                - --dataset.root=/data
-                - --dataset.local_files_only=true
-                - --policy.type=act
-                - --output_dir=/checkpoints/act
-                - --job_name=act_training
-                - --policy.device=cuda
-                - --wandb.enable=true
-              resources:
-                requests:
-                  cpu: "4"
-                  memory: "16Gi"
-                  nvidia.com/gpu: "1"
-                limits:
-                  nvidia.com/gpu: "1"
-              volumeMounts:
-                - name: data
-                  mountPath: /data
-                - name: checkpoints
-                  mountPath: /checkpoints
-              env:
-                - name: WANDB_API_KEY
-                  valueFrom:
-                    secretKeyRef:
-                      name: training-secrets
-                      key: wandb-api-key
-          volumes:
-            - name: data
-              persistentVolumeClaim:
-                claimName: training-data-pvc
-            - name: checkpoints
-              persistentVolumeClaim:
-                claimName: checkpoints-pvc
+  runtimeRef:
+    name: torch-distributed
+  trainer:
+    image: ghcr.io/ethroboticsclub/pytorch:latest
+    command: ["lerobot-train"]
+    args:
+      - --dataset.repo_id=ETHRC/towel_base_with_rewards
+      - --dataset.root=/data
+      - --dataset.local_files_only=true
+      - --policy.type=act
+      - --output_dir=/checkpoints/act
+      - --job_name=act_training
+      - --policy.device=cuda
+      - --wandb.enable=true
+    numNodes: 1
+    resourcesPerNode:
+      requests:
+        cpu: "4"
+        memory: "16Gi"
+        nvidia.com/gpu: "1"
+      limits:
+        nvidia.com/gpu: "1"
+    env:
+      - name: WANDB_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: training-secrets
+            key: wandb-api-key
+  podTemplateOverrides:
+    - targetJobs:
+        - name: node
+      spec:
+        nodeSelector:
+          node-tier: gpum
+        tolerations:
+          - key: nvidia.com/gpu
+            operator: Exists
+            effect: NoSchedule
+        volumes:
+          - name: data
+            persistentVolumeClaim:
+              claimName: testing1-data
+          - name: checkpoints
+            persistentVolumeClaim:
+              claimName: testing1-checkpoints
+        containers:
+          - name: node
+            volumeMounts:
+              - name: data
+                mountPath: /data
+              - name: checkpoints
+                mountPath: /checkpoints

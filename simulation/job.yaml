@@ -1,39 +1,41 @@
-apiVersion: kubeflow.org/v1
-kind: PyTorchJob
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: TrainJob
 metadata:
   name: simulation-job
-  namespace: hydra
+  namespace: robot-learning
 spec:
-  nprocPerNode: "1"
-  pytorchReplicaSpecs:
-    Master:
-      replicas: 1
-      restartPolicy: OnFailure
-      template:
-        spec:
-          containers:
-            - name: pytorch
-              image: our-simulation-image:latest
-              resources:
-                requests:
-                  cpu: "4"
-                  memory: "16Gi"
-                  nvidia.com/gpu: "1"
-              volumeMounts:
-                - name: data
-                  mountPath: /data
-                - name: checkpoints
-                  mountPath: /checkpoints
-              env:
-                - name: WANDB_API_KEY
-                  valueFrom:
-                    secretKeyRef:
-                      name: training-secrets
-                      key: wandb-api-key
-          volumes:
-            - name: data
-              persistentVolumeClaim:
-                claimName: training-data-pvc
-            - name: checkpoints
-              persistentVolumeClaim:
-                claimName: checkpoints-pvc
+  runtimeRef:
+    name: torch-distributed
+  trainer:
+    image: our-simulation-image:latest
+    numNodes: 1
+    numProcPerNode: 1
+    resourcesPerNode:
+      requests:
+        cpu: "4"
+        memory: "16Gi"
+        nvidia.com/gpu: "1"
+    env:
+      - name: WANDB_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: training-secrets
+            key: wandb-api-key
+  podTemplateOverrides:
+    - targetJobs:
+        - name: node
+      spec:
+        volumes:
+          - name: data
+            persistentVolumeClaim:
+              claimName: training-data-pvc
+          - name: checkpoints
+            persistentVolumeClaim:
+              claimName: checkpoints-pvc
+        containers:
+          - name: node
+            volumeMounts:
+              - name: data
+                mountPath: /data
+              - name: checkpoints
+                mountPath: /checkpoints
