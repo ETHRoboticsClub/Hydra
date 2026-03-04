@@ -8,16 +8,7 @@ spec:
     name: torch-distributed
   trainer:
     image: ghcr.io/ethroboticsclub/pytorch:latest
-    command: ["lerobot-train"]
-    args:
-      - --dataset.repo_id=ETHRC/towel_base_with_rewards
-      - --dataset.root=/data
-      - --dataset.local_files_only=true
-      - --policy.type=act
-      - --output_dir=/checkpoints/act
-      - --job_name=act_training
-      - --policy.device=cuda
-      - --wandb.enable=true
+    command: ["/bin/bash", "/workspace/run.sh"]
     numNodes: 1
     resourcesPerNode:
       requests:
@@ -43,6 +34,10 @@ spec:
           - name: checkpoints
             persistentVolumeClaim:
               claimName: testing1-checkpoints
+          - name: scripts
+            configMap:
+              name: training-scripts
+              defaultMode: 0755
         containers:
           - name: node
             volumeMounts:
@@ -50,3 +45,5 @@ spec:
                 mountPath: /data
               - name: checkpoints
                 mountPath: /checkpoints
+              - name: scripts
+                mountPath: /workspace
