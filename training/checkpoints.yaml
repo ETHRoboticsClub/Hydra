@@ -1,12 +1,11 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: checkpoints-pvc
-  namespace: hydra
+  name: testing1-checkpoints
+  namespace: robot-learning
 spec:
   accessModes:
-    - ReadWriteOnce
-  storageClassName: gp3
+    - ReadWriteMany
   resources:
     requests:
-      storage: 50Gi Ja
+      storage: 50Gi
