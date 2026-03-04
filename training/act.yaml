@@ -10,20 +10,19 @@ spec:
     image: ghcr.io/ethroboticsclub/pytorch:latest
     command: ["lerobot-train"]
     args:
-      - --dataset.repo_id=ETHRC/towel_base_with_rewards
+      - --dataset.repo_id=/dataset
       - --dataset.root=/data
       - --dataset.local_files_only=true
       - --policy.type=act
       - --output_dir=/checkpoints/act
       - --job_name=act_training
       - --policy.device=cuda
-      - --wandb.enable=true
     numNodes: 1
     resourcesPerNode:
-      requests:
-        cpu: "4"
-        memory: "16Gi"
-        nvidia.com/gpu: "1"
+      #requests:
+      #  cpu: "4"
+      #  memory: "16Gi"
+      #  nvidia.com/gpu: "1"
       limits:
         nvidia.com/gpu: "1"
   podTemplateOverrides:
