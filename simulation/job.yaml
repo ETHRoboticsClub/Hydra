@@ -25,6 +25,12 @@ spec:
     - targetJobs:
         - name: node
       spec:
+        nodeSelector:
+          node-tier: gpum
+        tolerations:
+          - key: nvidia.com/gpu
+            operator: Exists
+            effect: NoSchedule
         volumes:
           - name: data
             persistentVolumeClaim:

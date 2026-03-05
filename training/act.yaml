@@ -20,8 +20,6 @@ spec:
     numNodes: 1
     resourcesPerNode:
       requests:
-        cpu: "4"
-        memory: "16Gi"
         nvidia.com/gpu: "1"
       limits:
         nvidia.com/gpu: "1"
@@ -30,7 +28,8 @@ spec:
         - name: node
       spec:
         nodeSelector:
-          node-tier: gpum
+          karpenter.sh/nodepool: gpus
+          node-tier: gpus
         tolerations:
           - key: nvidia.com/gpu
             operator: Exists
