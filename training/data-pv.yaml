@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: testing1-data
+spec:
+  capacity:
+    storage: 8Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  # storageClassName: "" tells Kubernetes this is a manually managed (static) PV.
+  # The PVC in data.yaml references it by name via claimRef / volumeName.
+  storageClassName: ""
+  # Pre-bind to the testing1-data PVC so no other claim can take this volume.
+  claimRef:
+    namespace: robot-learning
+    name: testing1-data
+  mountOptions:
+    - allow-other   # lets non-root container users (uid 1000) read the mount
+  csi:
+    driver: s3.csi.aws.com        # Mountpoint for Amazon S3 CSI driver
+    # volumeHandle must be unique across all PVs in the cluster
+    volumeHandle: testing1-data-s3
+    volumeAttributes:
+      bucketName: ethrc-ml-data-916780037007

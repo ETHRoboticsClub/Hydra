@@ -8,21 +8,26 @@ spec:
     name: torch-distributed
   trainer:
     image: ghcr.io/ethroboticsclub/pytorch:latest
+    # run.sh is injected via the run-sh ConfigMap — no image rebuild needed.
     command: ["/bin/bash", "/workspace/run.sh"]
-    args:
-      - --dataset.repo_id=/dataset
-      - --dataset.root=/data
-      - --dataset.local_files_only=true
-      - --policy.type=act
-      - --output_dir=/checkpoints/act
-      - --job_name=act_training
-      - --policy.device=cuda
     numNodes: 1
     resourcesPerNode:
       requests:
         nvidia.com/gpu: "1"
       limits:
         nvidia.com/gpu: "1"
+    env:
+      - name: DATASET_REPO_ID
+        value: "lerobot/pusht"
+      - name: DATASET_ROOT
+        value: "/data"
+      - name: CHECKPOINT_DIR
+        value: "/checkpoints/act"
+      - name: WANDB_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: training-secrets
+            key: wandb-api-key
   podTemplateOverrides:
     - targetJobs:
         - name: node
@@ -41,6 +46,10 @@ spec:
           - name: checkpoints
             persistentVolumeClaim:
               claimName: testing1-checkpoints
+          - name: run-sh
+            configMap:
+              name: run-sh
+              defaultMode: 0755   # executable
         containers:
           - name: node
             volumeMounts:
@@ -48,3 +57,6 @@ spec:
                 mountPath: /data
               - name: checkpoints
                 mountPath: /checkpoints
+              - name: run-sh
+                mountPath: /workspace/run.sh
+                subPath: run.sh

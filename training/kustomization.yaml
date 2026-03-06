@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Apply order matters: StorageClass → PV → PVCs → ConfigMap → TrainJob
+resources:
+  - gp3.yaml            # StorageClass (EBS GP3 for checkpoints)
+  - data-pv.yaml        # PersistentVolume backed by S3 (Mountpoint CSI)
+  - data.yaml           # PVC for training data  → binds to data-pv
+  - checkpoints.yaml    # PVC for checkpoints    → dynamically provisioned gp3
+  - run-sh-configmap.yaml  # run.sh injected into pods without image rebuild
+  - act.yaml            # TrainJob (ACT policy)

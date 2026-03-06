@@ -6,6 +6,10 @@ metadata:
 spec:
   accessModes:
     - ReadWriteMany
+  # "" binds this PVC to the manually created S3-backed PV (data-pv.yaml)
+  # rather than dynamically provisioning a new EBS volume.
+  storageClassName: ""
+  volumeName: testing1-data
   resources:
     requests:
       storage: 8Gi
