@@ -4,6 +4,7 @@ metadata:
   name: testing1-checkpoints
   namespace: robot-learning
 spec:
+  storageClassName: ""
   accessModes:
     - ReadWriteMany
   resources:

@@ -7,7 +7,7 @@ spec:
   runtimeRef:
     name: torch-distributed
   trainer:
-    image: ghcr.io/ethroboticsclub/pytorch:latest
+    image: pytorch/pytorch:2.10.0-cuda13.0-cudnn9-runtime
     command: ["/bin/bash", "/workspace/run.sh"]
     args:
       - --dataset.repo_id=/dataset

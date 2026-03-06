@@ -4,6 +4,7 @@ metadata:
   name: testing1-data
   namespace: robot-learning
 spec:
+  storageClassName: ""
   accessModes:
     - ReadWriteMany
   resources:
