@@ -1,7 +1,7 @@
 apiVersion: trainer.kubeflow.org/v1alpha1
 kind: TrainJob
 metadata:
-  name: act-training
+  name: hello-world
   namespace: robot-learning
 spec:
   runtimeRef:
@@ -11,7 +11,7 @@ spec:
     command:
       - /bin/bash
       - -c
-      - aws s3 cp s3://ethrc-ml-scripts/act/run.sh /tmp/run.sh && bash /tmp/run.sh
+      - aws s3 cp s3://ethrc-ml-scripts/hello-world.sh /tmp/hello-world.sh && bash /tmp/hello-world.sh
     numNodes: 1
     resourcesPerNode:
       requests:
@@ -29,17 +29,3 @@ spec:
           - key: nvidia.com/gpu
             operator: Exists
             effect: NoSchedule
-        volumes:
-          - name: data
-            persistentVolumeClaim:
-              claimName: testing1-data
-          - name: checkpoints
-            persistentVolumeClaim:
-              claimName: testing1-checkpoints
-        containers:
-          - name: node
-            volumeMounts:
-              - name: data
-                mountPath: /data
-              - name: checkpoints
-                mountPath: /checkpoints
