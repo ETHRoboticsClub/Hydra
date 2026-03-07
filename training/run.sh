@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DATASET_REPO_ID="${DATASET_REPO_ID:?Error: DATASET_REPO_ID env var is not set}"
-DATASET_ROOT="${DATASET_ROOT:-/data:?Error: DATASET_ROOT env var is not set}"
-CHECKPOINT_DIR="${CHECKPOINT_DIR:-/checkpoints/act:?Error: CHECKPOINT_DIR env var is not set}"
-DATA_DIR="${DATASET_ROOT}/${DATASET_REPO_ID:?Error: DATA_DIR env var is not set}"
+DATASET_REPO_ID="ETHRC/towel_base_with_rewards"
+DATASET_ROOT="/data"
+CHECKPOINT_DIR="/checkpoints/act"
+DATA_DIR="${DATASET_ROOT}/${DATASET_REPO_ID}"
 
 # ── 1. Install lerobot ────────────────────────────────────────────────────────
 echo "[run.sh] Installing lerobot..."

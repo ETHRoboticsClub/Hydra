@@ -8,15 +8,10 @@ spec:
     name: torch-distributed
   trainer:
     image: pytorch/pytorch:2.10.0-cuda13.0-cudnn9-runtime
-    command: ["/bin/bash", "/workspace/run.sh"]
-    args:
-      - --dataset.repo_id=/dataset
-      - --dataset.root=/data
-      - --dataset.local_files_only=true
-      - --policy.type=act
-      - --output_dir=/checkpoints/act
-      - --job_name=act_training
-      - --policy.device=cuda
+    command:
+      - /bin/bash
+      - -c
+      - aws s3 cp s3://YOUR_BUCKET_NAME/scripts/run.sh /tmp/run.sh && bash /tmp/run.sh
     numNodes: 1
     resourcesPerNode:
       requests:
