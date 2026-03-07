@@ -37,11 +37,10 @@ fi
 echo "[run.sh] Starting lerobot-train..."
 
 export WANDB_MODE=disabled
-export HF_HUB_OFFLINE=1
 
 lerobot-train \
   --dataset.repo_id="${DATASET_REPO_ID}" \
-  --dataset.root="${DATA_DIR}" \
+  --dataset.root="${DATASET_ROOT}" \
   --policy.type=act \
   --output_dir="${CHECKPOINT_DIR}" \
   --job_name=act_training \
