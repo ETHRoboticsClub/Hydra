@@ -2,7 +2,7 @@
 set -euo pipefail
 
 DATASET_REPO_ID="ETHRC/towel_base_with_rewards"
-DATASET_ROOT="/data/ETHRC/towel_base_with_rewards"
+DATASET_ROOT="/data"
 CHECKPOINT_DIR="/checkpoints/act"
 DATA_DIR="${DATASET_ROOT}/${DATASET_REPO_ID}"
 
@@ -41,7 +41,7 @@ export HF_HUB_OFFLINE=1
 
 lerobot-train \
   --dataset.repo_id="${DATASET_REPO_ID}" \
-  --dataset.root="${DATASET_ROOT}" \
+  --dataset.root="${DATA_DIR}" \
   --policy.type=act \
   --output_dir="${CHECKPOINT_DIR}" \
   --job_name=act_training \
