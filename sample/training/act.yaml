@@ -1,32 +1,31 @@
 apiVersion: trainer.kubeflow.org/v1alpha1
 kind: TrainJob
 metadata:
-  name: simulation-job
+  name: act-training
   namespace: robot-learning
 spec:
   runtimeRef:
     name: torch-distributed
   trainer:
-    image: our-simulation-image:latest
+    image: 916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-5318f83
+    command:
+      - /bin/bash
+      - -c
+      - curl https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/master/scripts/act/run.sh -o /tmp/run.sh && bash /tmp/run.sh
     numNodes: 1
-    numProcPerNode: 1
     resourcesPerNode:
       requests:
-        cpu: "4"
-        memory: "16Gi"
         nvidia.com/gpu: "1"
-    env:
-      - name: WANDB_API_KEY
-        valueFrom:
-          secretKeyRef:
-            name: training-secrets
-            key: wandb-api-key
+      limits:
+        nvidia.com/gpu: "1"
   podTemplateOverrides:
     - targetJobs:
         - name: node
       spec:
+        serviceAccountName: training-sa
         nodeSelector:
-          node-tier: gpum
+          karpenter.sh/nodepool: gpus
+          node-tier: gpus
         tolerations:
           - key: nvidia.com/gpu
             operator: Exists
@@ -34,10 +33,10 @@ spec:
         volumes:
           - name: data
             persistentVolumeClaim:
-              claimName: training-data-pvc
+              claimName: testing1-data
           - name: checkpoints
             persistentVolumeClaim:
-              claimName: checkpoints-pvc
+              claimName: testing1-checkpoints
         containers:
           - name: node
             volumeMounts:
