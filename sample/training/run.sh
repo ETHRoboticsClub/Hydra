@@ -8,7 +8,10 @@ DATA_DIR="${DATASET_ROOT}/${DATASET_REPO_ID}"
 
 # ── 1. Install lerobot ────────────────────────────────────────────────────────
 echo "[run.sh] Installing lerobot..."
+
 pip install lerobot --break-system-packages
+
+export PATH="$HOME/.local/bin:$PATH"
 
 # ── 2. Checkpoint guard ───────────────────────────────────────────────────────
 # If a checkpoint already exists, there is nothing to do — exit cleanly so the

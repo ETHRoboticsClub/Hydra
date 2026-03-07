@@ -3,6 +3,10 @@ kind: PersistentVolume
 metadata:
   name: testing1-data
 spec:
+  mountOptions:
+    - allow-other
+    - uid=1001
+    - gid=1001
   capacity:
     storage: 8Gi
   accessModes:
@@ -22,6 +26,10 @@ kind: PersistentVolume
 metadata:
   name: testing1-checkpoints
 spec:
+  mountOptions:
+    - allow-other
+    - uid=1001
+    - gid=1001
   capacity:
     storage: 50Gi
   accessModes:
