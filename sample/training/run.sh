@@ -45,4 +45,5 @@ lerobot-train \
   --output_dir="${CHECKPOINT_DIR}" \
   --job_name=act_training \
   --policy.device=cuda \
+  --policy.repo_id="ETHRC/act-towel-base" \
   --wandb.enable=true
