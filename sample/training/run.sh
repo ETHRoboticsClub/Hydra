@@ -2,7 +2,7 @@
 set -euo pipefail
 
 DATASET_REPO_ID="ETHRC/towel_base_with_rewards"
-DATASET_ROOT="/data"
+DATASET_ROOT="/data/ETHRC/towel_base_with_rewards"
 CHECKPOINT_DIR="/checkpoints/act"
 DATA_DIR="${DATASET_ROOT}/${DATASET_REPO_ID}"
 
