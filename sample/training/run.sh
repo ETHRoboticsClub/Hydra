@@ -36,6 +36,7 @@ fi
 # ── 4. Train ──────────────────────────────────────────────────────────────────
 echo "[run.sh] Starting lerobot-train..."
 
+export WANDB_MODE=disabled
 export HF_HUB_OFFLINE=1
 
 lerobot-train \
@@ -45,4 +46,5 @@ lerobot-train \
   --output_dir="${CHECKPOINT_DIR}" \
   --job_name=act_training \
   --policy.device=cuda \
-  --policy.push_to_hub=false
+  --policy.push_to_hub=false \
+  --wandb.enable=false
