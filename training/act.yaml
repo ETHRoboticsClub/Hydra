@@ -7,7 +7,7 @@ spec:
   runtimeRef:
     name: torch-distributed
   trainer:
-    image: pytorch/pytorch:2.10.0-cuda13.0-cudnn9-runtime
+    image: 916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-5318f83
     command:
       - /bin/bash
       - -c
@@ -22,6 +22,7 @@ spec:
     - targetJobs:
         - name: node
       spec:
+        serviceAccountName: training-sa
         nodeSelector:
           karpenter.sh/nodepool: gpus
           node-tier: gpus
