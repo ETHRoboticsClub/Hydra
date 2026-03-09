@@ -1,17 +1,19 @@
 apiVersion: trainer.kubeflow.org/v1alpha1
 kind: TrainJob
 metadata:
-  name: lucafrat-gpu-test
+  name: groot-finetune-g1
   namespace: humanoid
 spec:
   runtimeRef:
     name: torch-distributed
   trainer:
+    # NOTE: Update the curl URL below after copying run.sh to the Hydra repo.
+    # Example: humanoid/groot-finetune/run.sh on the master branch.
     image: 916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-d866de5
     command:
       - /bin/bash
       - -c
-      - curl https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/humanoid/gpu-smoke-test/humanoid/run.sh -o /tmp/run.sh && bash /tmp/run.sh
+      - curl https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/master/humanoid/groot-finetune/run.sh -o /tmp/run.sh && bash /tmp/run.sh
     numNodes: 1
     resourcesPerNode:
       requests:
@@ -30,5 +32,17 @@ spec:
           - key: nvidia.com/gpu
             operator: Exists
             effect: NoSchedule
+        volumes:
+          - name: data
+            persistentVolumeClaim:
+              claimName: groot-finetune-data
+          - name: checkpoints
+            persistentVolumeClaim:
+              claimName: groot-finetune-checkpoints
         containers:
           - name: node
+            volumeMounts:
+              - name: data
+                mountPath: /data
+              - name: checkpoints
+                mountPath: /checkpoints

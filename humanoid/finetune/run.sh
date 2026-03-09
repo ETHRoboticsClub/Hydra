@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GDRIVE_FOLDER_ID="1_muY4syci21pkhwTZjfb3kx4TJBp-CEN"
-DATASET_LOCAL_PATH="$HOME/data/G1-sim"
-CHECKPOINT_DIR="$HOME/checkpoints/g1_finetune"
+DATASET_LOCAL_PATH="/data/humanoid/G1-sim"
+CHECKPOINT_DIR="/checkpoints/humanoid/g1_finetune"
 REPO_URL="https://github.com/LucaFrat/Isaac-GR00T.git"
 REPO_DIR="$HOME/Isaac-GR00T"
 
@@ -15,23 +14,15 @@ if [ -d "${CHECKPOINT_DIR}" ] && [ -n "$(ls -A "${CHECKPOINT_DIR}" 2>/dev/null)"
   exit 0
 fi
 
-# ── 2. System dependencies ───────────────────────────────────────────────────
-echo "[run.sh] Installing system dependencies..."
-sudo apt-get update && sudo apt-get install -y --no-install-recommends \
-  ffmpeg git-lfs libsm6 libxext6 libgl1-mesa-glx
-
-# ── 3. Download dataset from Google Drive ────────────────────────────────────
+# ── 2. Dataset check ─────────────────────────────────────────────────────────
 if [ ! -d "${DATASET_LOCAL_PATH}" ] || [ -z "$(ls -A "${DATASET_LOCAL_PATH}" 2>/dev/null)" ]; then
-  echo "[run.sh] Dataset not found at ${DATASET_LOCAL_PATH}. Downloading from Google Drive..."
-  pip install --user gdown
-  mkdir -p "${DATASET_LOCAL_PATH}"
-  gdown --folder "${GDRIVE_FOLDER_ID}" -O "${DATASET_LOCAL_PATH}" --remaining-ok
-  echo "[run.sh] Dataset download complete."
-else
-  echo "[run.sh] Dataset found at ${DATASET_LOCAL_PATH}. Skipping download."
+  echo "[run.sh] ERROR: Dataset not found at ${DATASET_LOCAL_PATH}."
+  echo "[run.sh] Upload it first: aws s3 cp --recursive <local-path> s3://ethrc-ml-data-916780037007/humanoid/G1-sim/"
+  exit 1
 fi
+echo "[run.sh] Dataset found at ${DATASET_LOCAL_PATH}."
 
-# ── 4. Install uv + Isaac-GR00T ─────────────────────────────────────────────
+# ── 3. Install uv + Isaac-GR00T ─────────────────────────────────────────────
 echo "[run.sh] Installing uv..."
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
@@ -43,7 +34,7 @@ echo "[run.sh] Installing Isaac-GR00T dependencies (this may take ~15 min for fl
 uv sync --python 3.10
 uv pip install -e .
 
-# ── 5. Verify CUDA ──────────────────────────────────────────────────────────
+# ── 4. Verify CUDA ──────────────────────────────────────────────────────────
 echo "[run.sh] Verifying CUDA..."
 uv run python -c "
 import torch
@@ -55,7 +46,7 @@ for i in range(torch.cuda.device_count()):
     print(f'  GPU {i}: {torch.cuda.get_device_name(i)}')
 "
 
-# ── 6. Train ─────────────────────────────────────────────────────────────────
+# ── 5. Train ─────────────────────────────────────────────────────────────────
 echo "[run.sh] Starting GR00T fine-tuning..."
 
 export NUM_GPUS=1
