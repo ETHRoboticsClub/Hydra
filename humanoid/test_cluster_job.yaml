@@ -1,0 +1,30 @@
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: TrainJob
+metadata:
+  name: groot-smoke-test
+  namespace: humanoid
+spec:
+  runtimeRef:
+    name: torch-distributed
+  trainer:
+    image: 916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-d866de5
+    command:
+      - bash
+      - -c
+      - |
+        aws s3 cp s3://ethrc-ml-scripts/humanoid/groot-smoke-test/setup.sh /tmp/setup.sh && bash /tmp/setup.sh
+    numNodes: 1
+    resourcesPerNode:
+      requests:
+        nvidia.com/gpu: 1
+      limits:
+        nvidia.com/gpu: 1
+    podSpecOverrides:
+      serviceAccountName: training-sa
+      nodeSelector:
+        karpenter.sh/nodepool: gpus
+        node-tier: gpus
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
