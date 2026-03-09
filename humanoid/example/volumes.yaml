@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: lucafrat-gpu-test-data
+spec:
+  mountOptions:
+    - allow-other
+    - uid=1001
+    - gid=1001
+  capacity:
+    storage: 8Gi
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  claimRef:
+    name: lucafrat-gpu-test-data
+    namespace: humanoid
+  csi:
+    driver: s3.csi.aws.com
+    volumeHandle: lucafrat-gpu-test-data
+    volumeAttributes:
+      bucketName: ethrc-ml-data-916780037007
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: lucafrat-gpu-test-checkpoints
+spec:
+  mountOptions:
+    - allow-other
+    - uid=1001
+    - gid=1001
+  capacity:
+    storage: 50Gi
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  claimRef:
+    name: lucafrat-gpu-test-checkpoints
+    namespace: humanoid
+  csi:
+    driver: s3.csi.aws.com
+    volumeHandle: lucafrat-gpu-test-checkpoints
+    volumeAttributes:
+      bucketName: ethrc-ml-data-916780037007
