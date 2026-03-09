@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DATASET_LOCAL_PATH="/data/ETHRC/g1_finetune/G1-sim"
+DATASET_LOCAL_PATH="ETHRC/g1_finetune/G1-sim"
 CHECKPOINT_DIR="/checkpoints/ETHRC/g1_finetune/checkpoints"
 REPO_URL="https://github.com/LucaFrat/Isaac-GR00T.git"
 REPO_DIR="$HOME/Isaac-GR00T"
