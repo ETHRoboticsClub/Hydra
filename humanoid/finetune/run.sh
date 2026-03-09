@@ -15,16 +15,28 @@ if [ -d "${CHECKPOINT_DIR}" ] && [ -n "$(ls -A "${CHECKPOINT_DIR}" 2>/dev/null)"
   exit 0
 fi
 
-# ── 2. Dataset check ─────────────────────────────────────────────────────────
-echo "[run.sh] DEBUG: Listing /data ..."
-ls -laR /data 2>&1 | head -50
-echo "[run.sh] DEBUG: Checking ${DATASET_LOCAL_PATH} ..."
-if [ ! -d "${DATASET_LOCAL_PATH}" ] || [ -z "$(ls -A "${DATASET_LOCAL_PATH}" 2>/dev/null)" ]; then
-  echo "[run.sh] ERROR: Dataset not found at ${DATASET_LOCAL_PATH}."
-  echo "[run.sh] Upload it first: aws s3 cp --recursive <local-path> s3://ethrc-ml-data-916780037007/ETHRC/g1_finetune/G1-sim/"
-  exit 1
+# ── 2. Dataset check / download ──────────────────────────────────────────────
+HF_REPO_ID="LucaFrat/G1-sim"
+HF_DATASET_PATH="/data/${HF_REPO_ID}"
+
+if [ -d "${DATASET_LOCAL_PATH}" ] && [ -n "$(ls -A "${DATASET_LOCAL_PATH}" 2>/dev/null)" ]; then
+  echo "[run.sh] Dataset found at ${DATASET_LOCAL_PATH}. Skipping download."
+else
+  echo "[run.sh] Dataset not found at ${DATASET_LOCAL_PATH}. Trying S3..."
+  mkdir -p "${DATASET_LOCAL_PATH}"
+  if aws s3 cp --recursive "${S3_DATASET_PATH}" "${DATASET_LOCAL_PATH}" 2>/dev/null; then
+    echo "[run.sh] Dataset downloaded from S3."
+  else
+    echo "[run.sh] S3 download failed. Downloading from Hugging Face..."
+    rm -rf "${DATASET_LOCAL_PATH}"
+    pip install huggingface_hub --break-system-packages
+    huggingface-cli download "${HF_REPO_ID}" \
+      --repo-type dataset \
+      --local-dir "${HF_DATASET_PATH}"
+    DATASET_LOCAL_PATH="${HF_DATASET_PATH}"
+    echo "[run.sh] Dataset downloaded from Hugging Face."
+  fi
 fi
-echo "[run.sh] Dataset found at ${DATASET_LOCAL_PATH}."
 
 # ── 3. Install uv + Isaac-GR00T ─────────────────────────────────────────────
 echo "[run.sh] Installing uv..."
