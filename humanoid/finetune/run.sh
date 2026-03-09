@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DATASET_LOCAL_PATH="ETHRC/g1_finetune/G1-sim"
+DATASET_LOCAL_PATH="/data/ETHRC/g1_finetune/G1-sim"
+S3_DATASET_PATH="s3://ethrc-ml-data-916780037007/ETHRC/g1_finetune/G1-sim/"
 CHECKPOINT_DIR="/checkpoints/ETHRC/g1_finetune/checkpoints"
 REPO_URL="https://github.com/LucaFrat/Isaac-GR00T.git"
 REPO_DIR="$HOME/Isaac-GR00T"
@@ -15,6 +16,9 @@ if [ -d "${CHECKPOINT_DIR}" ] && [ -n "$(ls -A "${CHECKPOINT_DIR}" 2>/dev/null)"
 fi
 
 # ── 2. Dataset check ─────────────────────────────────────────────────────────
+echo "[run.sh] DEBUG: Listing /data ..."
+ls -laR /data 2>&1 | head -50
+echo "[run.sh] DEBUG: Checking ${DATASET_LOCAL_PATH} ..."
 if [ ! -d "${DATASET_LOCAL_PATH}" ] || [ -z "$(ls -A "${DATASET_LOCAL_PATH}" 2>/dev/null)" ]; then
   echo "[run.sh] ERROR: Dataset not found at ${DATASET_LOCAL_PATH}."
   echo "[run.sh] Upload it first: aws s3 cp --recursive <local-path> s3://ethrc-ml-data-916780037007/ETHRC/g1_finetune/G1-sim/"
