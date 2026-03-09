@@ -14,7 +14,7 @@ spec:
   storageClassName: ""
   claimRef:
     name: testing1-data
-    namespace: robot-learning
+    namespace: humanoid
   csi:
     driver: s3.csi.aws.com
     volumeHandle: testing1-data
@@ -37,7 +37,7 @@ spec:
   storageClassName: ""
   claimRef:
     name: testing1-checkpoints
-    namespace: robot-learning
+    namespace: humanoid
   csi:
     driver: s3.csi.aws.com
     volumeHandle: testing1-checkpoints

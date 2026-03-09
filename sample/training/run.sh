@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DATASET_REPO_ID="ETHRC/towel_base_with_rewards"
+DATASET_REPO_ID="ETHRC/g1_finetune"
 DATASET_ROOT="/data"
 CHECKPOINT_DIR="/checkpoints/act"
 DATA_DIR="${DATASET_ROOT}/${DATASET_REPO_ID}"

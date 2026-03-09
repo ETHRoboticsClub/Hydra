@@ -2,7 +2,7 @@ apiVersion: trainer.kubeflow.org/v1alpha1
 kind: TrainJob
 metadata:
   name: sample-training
-  namespace: robot-learning
+  namespace: humanoid
 spec:
   runtimeRef:
     name: torch-distributed
