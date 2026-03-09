@@ -4,9 +4,8 @@ metadata:
   name: groot-finetune-data
   namespace: humanoid
 spec:
-  storageClassName: ""
   accessModes:
-    - ReadWriteMany
+    - ReadWriteOnce
   resources:
     requests:
       storage: 8Gi
@@ -17,9 +16,8 @@ metadata:
   name: groot-finetune-checkpoints
   namespace: humanoid
 spec:
-  storageClassName: ""
   accessModes:
-    - ReadWriteMany
+    - ReadWriteOnce
   resources:
     requests:
       storage: 50Gi
