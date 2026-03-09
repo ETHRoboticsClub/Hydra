@@ -7,7 +7,7 @@ spec:
   runtimeRef:
     name: torch-distributed
   trainer:
-    image: 916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-5318f83
+    image: 916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-d866de5
     command:
       - /bin/bash
       - -c

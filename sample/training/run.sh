@@ -8,7 +8,10 @@ DATA_DIR="${DATASET_ROOT}/${DATASET_REPO_ID}"
 
 # ── 1. Install lerobot ────────────────────────────────────────────────────────
 echo "[run.sh] Installing lerobot..."
-apt-get install python3-lerobot --quiet
+
+pip install lerobot --break-system-packages
+
+export PATH="$HOME/.local/bin:$PATH"
 
 # ── 2. Checkpoint guard ───────────────────────────────────────────────────────
 # If a checkpoint already exists, there is nothing to do — exit cleanly so the
@@ -32,12 +35,15 @@ fi
 
 # ── 4. Train ──────────────────────────────────────────────────────────────────
 echo "[run.sh] Starting lerobot-train..."
+
+export WANDB_MODE=disabled
+
 lerobot-train \
   --dataset.repo_id="${DATASET_REPO_ID}" \
   --dataset.root="${DATASET_ROOT}" \
-  --dataset.local_files_only=true \
   --policy.type=act \
   --output_dir="${CHECKPOINT_DIR}" \
   --job_name=act_training \
   --policy.device=cuda \
-  --wandb.enable=true
+  --policy.push_to_hub=false \
+  --wandb.enable=false
