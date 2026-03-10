@@ -9,28 +9,15 @@ REPO_DIR="$HOME/Isaac-GR00T"
 
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
-# Install CUDA toolkit (nvcc) via pip — the container only has CUDA runtime
-echo "[run.sh] Installing CUDA toolkit via pip..."
-pip install nvidia-cuda-nvcc-cu12 nvidia-cuda-runtime-cu12 --break-system-packages
-
-# Debug: show what the package installed
-echo "[run.sh] Files installed by nvidia-cuda-nvcc-cu12:"
-pip show -f nvidia-cuda-nvcc-cu12 2>/dev/null | head -30
-
-# Find where nvcc was installed and set CUDA_HOME
-NVCC_BIN=$(find "$HOME/.local" /usr/local -name "nvcc*" -type f 2>/dev/null | head -1)
-if [ -n "${NVCC_BIN}" ]; then
-  CUDA_BIN_DIR=$(dirname "${NVCC_BIN}")
-  export CUDA_HOME=$(dirname "${CUDA_BIN_DIR}")
-  export PATH="${CUDA_BIN_DIR}:${PATH}"
-  echo "[run.sh] Found nvcc at ${NVCC_BIN}, CUDA_HOME=${CUDA_HOME}"
-else
-  echo "[run.sh] WARNING: nvcc not found after install!"
-  # Debug: show what was installed
-  find "$HOME/.local" -name "nvcc*" 2>/dev/null || echo "No nvcc files found in ~/.local"
-  find /usr/local -name "nvcc*" 2>/dev/null || echo "No nvcc files found in /usr/local"
-fi
+# Container has CUDA runtime but no toolkit (nvcc). Create a stub nvcc so
+# libraries (deepspeed/transformers) that check for it at import time don't crash.
+export CUDA_HOME="$HOME/.cuda_stub"
+mkdir -p "${CUDA_HOME}/bin"
+printf '#!/bin/sh\necho "nvcc: NVIDIA (R) Cuda compiler driver"\necho "Cuda compilation tools, release 12.4, V12.4.131"\n' > "${CUDA_HOME}/bin/nvcc"
+chmod +x "${CUDA_HOME}/bin/nvcc"
+export PATH="${CUDA_HOME}/bin:${PATH}"
 export DS_BUILD_OPS=0
+echo "[run.sh] Created stub nvcc at ${CUDA_HOME}/bin/nvcc"
 
 echo "[run.sh] Installing huggingface_hub..."
 pip install huggingface_hub[cli] --break-system-packages
