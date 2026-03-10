@@ -13,8 +13,12 @@ export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 echo "[run.sh] Installing CUDA toolkit via pip..."
 pip install nvidia-cuda-nvcc-cu12 nvidia-cuda-runtime-cu12 --break-system-packages
 
+# Debug: show what the package installed
+echo "[run.sh] Files installed by nvidia-cuda-nvcc-cu12:"
+pip show -f nvidia-cuda-nvcc-cu12 2>/dev/null | head -30
+
 # Find where nvcc was installed and set CUDA_HOME
-NVCC_BIN=$(find "$HOME/.local" /usr/local -name nvcc -type f 2>/dev/null | head -1)
+NVCC_BIN=$(find "$HOME/.local" /usr/local -name "nvcc*" -type f 2>/dev/null | head -1)
 if [ -n "${NVCC_BIN}" ]; then
   CUDA_BIN_DIR=$(dirname "${NVCC_BIN}")
   export CUDA_HOME=$(dirname "${CUDA_BIN_DIR}")
