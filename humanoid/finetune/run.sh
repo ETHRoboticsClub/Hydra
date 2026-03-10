@@ -10,18 +10,22 @@ REPO_DIR="$HOME/Isaac-GR00T"
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
 # Install CUDA toolkit (nvcc) via pip — the container only has CUDA runtime
-echo "[run.sh] Installing CUDA nvcc toolkit..."
-pip install nvidia-cuda-nvcc-cu12 --break-system-packages
+echo "[run.sh] Installing CUDA toolkit via pip..."
+pip install nvidia-cuda-nvcc-cu12 nvidia-cuda-runtime-cu12 --break-system-packages
 
-# Point CUDA_HOME to the pip-installed toolkit if /usr/local/cuda doesn't have nvcc
-if [ ! -f "/usr/local/cuda/bin/nvcc" ]; then
-  NVCC_PATH=$(python -c "import nvidia.cuda_nvcc; import os; print(os.path.dirname(nvidia.cuda_nvcc.__file__))" 2>/dev/null || true)
-  if [ -n "${NVCC_PATH}" ]; then
-    export CUDA_HOME="${NVCC_PATH}"
-    export PATH="${CUDA_HOME}/bin:${PATH}"
-  fi
+# Find where nvcc was installed and set CUDA_HOME
+NVCC_BIN=$(find "$HOME/.local" /usr/local -name nvcc -type f 2>/dev/null | head -1)
+if [ -n "${NVCC_BIN}" ]; then
+  CUDA_BIN_DIR=$(dirname "${NVCC_BIN}")
+  export CUDA_HOME=$(dirname "${CUDA_BIN_DIR}")
+  export PATH="${CUDA_BIN_DIR}:${PATH}"
+  echo "[run.sh] Found nvcc at ${NVCC_BIN}, CUDA_HOME=${CUDA_HOME}"
+else
+  echo "[run.sh] WARNING: nvcc not found after install!"
+  # Debug: show what was installed
+  find "$HOME/.local" -name "nvcc*" 2>/dev/null || echo "No nvcc files found in ~/.local"
+  find /usr/local -name "nvcc*" 2>/dev/null || echo "No nvcc files found in /usr/local"
 fi
-echo "[run.sh] CUDA_HOME=${CUDA_HOME:-unset}"
 export DS_BUILD_OPS=0
 
 echo "[run.sh] Installing huggingface_hub..."
