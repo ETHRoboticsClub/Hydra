@@ -9,6 +9,10 @@ REPO_DIR="$HOME/Isaac-GR00T"
 
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
+# Prevent DeepSpeed / transformers from trying to compile CUDA ops at import time
+export DS_BUILD_OPS=0
+export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
+
 echo "[run.sh] Installing huggingface_hub..."
 pip install huggingface_hub[cli] --break-system-packages
 
