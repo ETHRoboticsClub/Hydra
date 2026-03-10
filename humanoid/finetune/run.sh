@@ -8,6 +8,7 @@ REPO_DIR="$HOME/Isaac-GR00T"
 
 
 echo "[run.sh] Installing lerobot..."
+echo "Ciao test"
 
 pip install lerobot --break-system-packages
 
@@ -28,6 +29,8 @@ else
   echo "[run.sh] Dataset not found. Downloading from Hugging Face..."
   # pip install huggingface_hub --break-system-packages
   mkdir -p "${DATASET_LOCAL_PATH}"
+  echo "Ciao TEST"
+
   python -m huggingface_hub.cli download "${HF_REPO_ID}" \
     --repo-type dataset \
     --local-dir "${DATASET_LOCAL_PATH}"
