@@ -7,12 +7,10 @@ REPO_URL="https://github.com/LucaFrat/Isaac-GR00T.git"
 REPO_DIR="$HOME/Isaac-GR00T"
 
 
-echo "[run.sh] Installing lerobot..."
-echo "Ciao test"
-
-pip install lerobot --break-system-packages
-
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
+echo "[run.sh] Installing huggingface_hub..."
+pip install huggingface_hub[cli] --break-system-packages
 
 # ── 1. Checkpoint guard ──────────────────────────────────────────────────────
 if [ -d "${CHECKPOINT_DIR}" ] && [ -n "$(ls -A "${CHECKPOINT_DIR}" 2>/dev/null)" ]; then
@@ -27,11 +25,9 @@ if [ -d "${DATASET_LOCAL_PATH}" ] && [ -n "$(ls -A "${DATASET_LOCAL_PATH}" 2>/de
   echo "[run.sh] Dataset found at ${DATASET_LOCAL_PATH}. Skipping download."
 else
   echo "[run.sh] Dataset not found. Downloading from Hugging Face..."
-  # pip install huggingface_hub --break-system-packages
   mkdir -p "${DATASET_LOCAL_PATH}"
-  echo "Ciao TEST"
-
-  python -m huggingface_hub.cli download "${HF_REPO_ID}" \
+  echo "=== CIAO ==="
+  huggingface-cli download "${HF_REPO_ID}" \
     --repo-type dataset \
     --local-dir "${DATASET_LOCAL_PATH}"
   echo "[run.sh] Dataset downloaded from Hugging Face to ${DATASET_LOCAL_PATH}."
