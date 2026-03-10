@@ -46,13 +46,16 @@ echo "[run.sh] Cloning Isaac-GR00T..."
 git clone --recurse-submodules "${REPO_URL}" "${REPO_DIR}"
 cd "${REPO_DIR}"
 
+# Set CUDA_HOME if not already set (needed for flash-attn build)
+if [ -z "${CUDA_HOME:-}" ]; then
+  if [ -d "/usr/local/cuda" ]; then
+    export CUDA_HOME=/usr/local/cuda
+  fi
+fi
+echo "[run.sh] CUDA_HOME=${CUDA_HOME:-unset}"
+
 echo "[run.sh] Installing Isaac-GR00T dependencies..."
 uv sync --python 3.10
-
-echo "[run.sh] Installing flash-attn pre-built wheel..."
-# The container lacks nvcc, so install a pre-built wheel matching PyTorch 2.x + CUDA 12.x + Python 3.10
-uv pip install flash-attn --find-links https://github.com/Dao-AILab/flash-attention/releases/latest
-
 uv pip install -e .
 
 # ── 4. Verify CUDA ──────────────────────────────────────────────────────────
