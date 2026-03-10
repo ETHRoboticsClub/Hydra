@@ -26,7 +26,6 @@ if [ -d "${DATASET_LOCAL_PATH}" ] && [ -n "$(ls -A "${DATASET_LOCAL_PATH}" 2>/de
 else
   echo "[run.sh] Dataset not found. Downloading from Hugging Face..."
   mkdir -p "${DATASET_LOCAL_PATH}"
-  echo "HALLO"
   python -c "
 from huggingface_hub import snapshot_download
 snapshot_download(
@@ -46,16 +45,18 @@ echo "[run.sh] Cloning Isaac-GR00T..."
 git clone --recurse-submodules "${REPO_URL}" "${REPO_DIR}"
 cd "${REPO_DIR}"
 
-# Set CUDA_HOME if not already set (needed for flash-attn build)
-if [ -z "${CUDA_HOME:-}" ]; then
-  if [ -d "/usr/local/cuda" ]; then
-    export CUDA_HOME=/usr/local/cuda
-  fi
-fi
-echo "[run.sh] CUDA_HOME=${CUDA_HOME:-unset}"
+# Remove flash-attn from dependencies (no nvcc in container, need pre-built wheel)
+echo "[run.sh] Patching out flash-attn from dependencies (will install pre-built wheel)..."
+sed -i 's/"flash-attn[^"]*",\?//' pyproject.toml
 
 echo "[run.sh] Installing Isaac-GR00T dependencies..."
 uv sync --python 3.10
+
+# Detect PyTorch version and install matching pre-built flash-attn wheel
+TORCH_VER=$(uv run python -c "import torch; print('.'.join(torch.__version__.split('.')[:2]))")
+echo "[run.sh] Detected PyTorch ${TORCH_VER}, installing pre-built flash-attn..."
+uv pip install "https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch${TORCH_VER}cxx11abiFALSE-cp310-cp310-linux_x86_64.whl"
+
 uv pip install -e .
 
 # ── 4. Verify CUDA ──────────────────────────────────────────────────────────
