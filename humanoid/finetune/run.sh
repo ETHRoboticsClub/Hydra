@@ -6,10 +6,12 @@ CHECKPOINT_DIR="/checkpoints/ETHRC/g1_finetune/checkpoints"
 REPO_URL="https://github.com/LucaFrat/Isaac-GR00T.git"
 REPO_DIR="$HOME/Isaac-GR00T"
 
-export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
-# pip install huggingface_hub
+echo "[run.sh] Installing lerobot..."
+
 pip install lerobot --break-system-packages
+
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
 # ── 1. Checkpoint guard ──────────────────────────────────────────────────────
 if [ -d "${CHECKPOINT_DIR}" ] && [ -n "$(ls -A "${CHECKPOINT_DIR}" 2>/dev/null)" ]; then
