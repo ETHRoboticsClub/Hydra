@@ -42,14 +42,11 @@ spec:
             emptyDir:
               medium: Memory
               sizeLimit: 16Gi
+          - name: hf-token
+            secret:
+              secretName: hf-token
         containers:
           - name: node
-            env:
-              - name: HF_TOKEN
-                valueFrom:
-                  secretKeyRef:
-                    name: hf-token
-                    key: HF_TOKEN
             volumeMounts:
               - name: data
                 mountPath: /data
@@ -57,3 +54,6 @@ spec:
                 mountPath: /checkpoints
               - name: dshm
                 mountPath: /dev/shm
+              - name: hf-token
+                mountPath: /secrets/hf
+                readOnly: true

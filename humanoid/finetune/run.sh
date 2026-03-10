@@ -110,15 +110,21 @@ CUDA_VISIBLE_DEVICES=0 uv run python \
 echo "[run.sh] Training complete. Checkpoints saved to ${CHECKPOINT_DIR}."
 
 # ── 6. Upload checkpoints to HuggingFace ────────────────────────────────────
+# Read HF token from mounted secret
+if [ -f /secrets/hf/HF_TOKEN ]; then
+  export HF_TOKEN=$(cat /secrets/hf/HF_TOKEN)
+fi
+
 if [ -n "${HF_TOKEN:-}" ]; then
   echo "[run.sh] Uploading checkpoints to HuggingFace..."
   python -c "
+import os
 from huggingface_hub import upload_folder
 upload_folder(
     folder_path='${CHECKPOINT_DIR}',
     repo_id='LucaFrat/G1-finetune-checkpoints',
     repo_type='model',
-    token='${HF_TOKEN}',
+    token=os.environ['HF_TOKEN'],
 )
 print('Upload complete.')
 "
