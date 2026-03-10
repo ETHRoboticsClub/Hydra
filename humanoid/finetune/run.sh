@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DATASET_LOCAL_PATH="/data/ETHRC/g1_finetune/G1-sim"
-S3_DATASET_PATH="s3://ethrc-ml-data-916780037007/ETHRC/g1_finetune/G1-sim/"
+DATASET_LOCAL_PATH="$HOME/dataset/G1-sim"
 CHECKPOINT_DIR="/checkpoints/ETHRC/g1_finetune/checkpoints"
 REPO_URL="https://github.com/LucaFrat/Isaac-GR00T.git"
 REPO_DIR="$HOME/Isaac-GR00T"
@@ -17,25 +16,17 @@ fi
 
 # ── 2. Dataset check / download ──────────────────────────────────────────────
 HF_REPO_ID="LucaFrat/G1-sim"
-HF_DATASET_PATH="/data/${HF_REPO_ID}"
 
 if [ -d "${DATASET_LOCAL_PATH}" ] && [ -n "$(ls -A "${DATASET_LOCAL_PATH}" 2>/dev/null)" ]; then
   echo "[run.sh] Dataset found at ${DATASET_LOCAL_PATH}. Skipping download."
 else
-  echo "[run.sh] Dataset not found at ${DATASET_LOCAL_PATH}. Trying S3..."
+  echo "[run.sh] Dataset not found. Downloading from Hugging Face..."
+  pip install huggingface_hub --break-system-packages
   mkdir -p "${DATASET_LOCAL_PATH}"
-  if aws s3 cp --recursive "${S3_DATASET_PATH}" "${DATASET_LOCAL_PATH}" 2>/dev/null; then
-    echo "[run.sh] Dataset downloaded from S3."
-  else
-    echo "[run.sh] S3 download failed. Downloading from Hugging Face..."
-    rm -rf "${DATASET_LOCAL_PATH}"
-    pip install huggingface_hub --break-system-packages
-    huggingface-cli download "${HF_REPO_ID}" \
-      --repo-type dataset \
-      --local-dir "${HF_DATASET_PATH}"
-    DATASET_LOCAL_PATH="${HF_DATASET_PATH}"
-    echo "[run.sh] Dataset downloaded from Hugging Face."
-  fi
+  huggingface-cli download "${HF_REPO_ID}" \
+    --repo-type dataset \
+    --local-dir "${DATASET_LOCAL_PATH}"
+  echo "[run.sh] Dataset downloaded from Hugging Face to ${DATASET_LOCAL_PATH}."
 fi
 
 # ── 3. Install uv + Isaac-GR00T ─────────────────────────────────────────────
