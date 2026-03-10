@@ -23,7 +23,7 @@ else
   echo "[run.sh] Dataset not found. Downloading from Hugging Face..."
   pip install huggingface_hub --break-system-packages
   mkdir -p "${DATASET_LOCAL_PATH}"
-  huggingface-cli download "${HF_REPO_ID}" \
+  python -m huggingface_hub.cli download "${HF_REPO_ID}" \
     --repo-type dataset \
     --local-dir "${DATASET_LOCAL_PATH}"
   echo "[run.sh] Dataset downloaded from Hugging Face to ${DATASET_LOCAL_PATH}."
