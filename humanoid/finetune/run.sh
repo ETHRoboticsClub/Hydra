@@ -8,6 +8,8 @@ REPO_DIR="$HOME/Isaac-GR00T"
 
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
+pip install huggingface_hub
+
 # ── 1. Checkpoint guard ──────────────────────────────────────────────────────
 if [ -d "${CHECKPOINT_DIR}" ] && [ -n "$(ls -A "${CHECKPOINT_DIR}" 2>/dev/null)" ]; then
   echo "[run.sh] Checkpoints found at ${CHECKPOINT_DIR} — training already complete. Exiting."
