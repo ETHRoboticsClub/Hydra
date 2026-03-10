@@ -44,6 +44,12 @@ spec:
               sizeLimit: 16Gi
         containers:
           - name: node
+            env:
+              - name: HF_TOKEN
+                valueFrom:
+                  secretKeyRef:
+                    name: hf-token
+                    key: HF_TOKEN
             volumeMounts:
               - name: data
                 mountPath: /data
