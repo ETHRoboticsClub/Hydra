@@ -46,8 +46,13 @@ echo "[run.sh] Cloning Isaac-GR00T..."
 git clone --recurse-submodules "${REPO_URL}" "${REPO_DIR}"
 cd "${REPO_DIR}"
 
-echo "[run.sh] Installing Isaac-GR00T dependencies (this may take ~15 min for flash-attn)..."
+echo "[run.sh] Installing Isaac-GR00T dependencies..."
 uv sync --python 3.10
+
+echo "[run.sh] Installing flash-attn pre-built wheel..."
+# The container lacks nvcc, so install a pre-built wheel matching PyTorch 2.x + CUDA 12.x + Python 3.10
+uv pip install flash-attn --find-links https://github.com/Dao-AILab/flash-attention/releases/latest
+
 uv pip install -e .
 
 # ── 4. Verify CUDA ──────────────────────────────────────────────────────────
