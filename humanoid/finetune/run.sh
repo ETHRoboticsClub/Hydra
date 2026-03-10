@@ -26,10 +26,15 @@ if [ -d "${DATASET_LOCAL_PATH}" ] && [ -n "$(ls -A "${DATASET_LOCAL_PATH}" 2>/de
 else
   echo "[run.sh] Dataset not found. Downloading from Hugging Face..."
   mkdir -p "${DATASET_LOCAL_PATH}"
-  echo "=== CIAO ==="
-  huggingface-cli download "${HF_REPO_ID}" \
-    --repo-type dataset \
-    --local-dir "${DATASET_LOCAL_PATH}"
+  echo "HALLO"
+  python -c "
+from huggingface_hub import snapshot_download
+snapshot_download(
+    repo_id='${HF_REPO_ID}',
+    repo_type='dataset',
+    local_dir='${DATASET_LOCAL_PATH}',
+)
+"
   echo "[run.sh] Dataset downloaded from Hugging Face to ${DATASET_LOCAL_PATH}."
 fi
 
