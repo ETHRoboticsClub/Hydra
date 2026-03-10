@@ -2,12 +2,14 @@
 set -euo pipefail
 
 DATASET_LOCAL_PATH="$HOME/dataset/G1-sim"
-CHECKPOINT_DIR="/checkpoints/ETHRC/g1_finetune/checkpoints"
+CHECKPOINT_DIR="$HOME/checkpoints/g1_finetune"
 REPO_URL="https://github.com/LucaFrat/Isaac-GR00T.git"
 REPO_DIR="$HOME/Isaac-GR00T"
 
 
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
+echo "MAY ------------------"
 
 # Container has CUDA runtime but no toolkit (nvcc). Create a stub nvcc so
 # libraries (deepspeed/transformers) that check for it at import time don't crash.
