@@ -25,8 +25,8 @@ spec:
       spec:
         serviceAccountName: training-sa
         nodeSelector:
-          karpenter.sh/nodepool: gpus
-          node-tier: gpus
+          karpenter.sh/nodepool: gpum
+          node-tier: gpum
         tolerations:
           - key: nvidia.com/gpu
             operator: Exists
@@ -38,6 +38,10 @@ spec:
           - name: checkpoints
             persistentVolumeClaim:
               claimName: groot-finetune-checkpoints
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 16Gi
         containers:
           - name: node
             volumeMounts:
@@ -45,3 +49,5 @@ spec:
                 mountPath: /data
               - name: checkpoints
                 mountPath: /checkpoints
+              - name: dshm
+                mountPath: /dev/shm

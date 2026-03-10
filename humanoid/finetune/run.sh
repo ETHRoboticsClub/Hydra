@@ -93,6 +93,8 @@ CUDA_VISIBLE_DEVICES=0 uv run python \
     --base_model_path nvidia/GR00T-N1.6-3B \
     --dataset_path "${DATASET_LOCAL_PATH}" \
     --embodiment_tag UNITREE_G1 \
+    --no_tune_llm \
+    --no_tune_visual \
     --num_gpus $NUM_GPUS \
     --output_dir "${CHECKPOINT_DIR}" \
     --save_total_limit 5 \
