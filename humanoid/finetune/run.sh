@@ -107,8 +107,7 @@ CUDA_VISIBLE_DEVICES=0 uv run python \
     --warmup_ratio 0.05 \
     --weight_decay 1e-5 \
     --learning_rate 1e-4 \
-    --global_batch_size 128 \
-    --gradient_accumulation_steps 4 \
+    --global_batch_size 32 \
     --dataloader_num_workers 8 \
     --color_jitter_params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08
 
