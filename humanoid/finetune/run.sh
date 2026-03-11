@@ -86,6 +86,10 @@ for i in range(torch.cuda.device_count()):
 # ── 5. Train ─────────────────────────────────────────────────────────────────
 echo "[run.sh] Starting GR00T fine-tuning..."
 
+# GPU monitoring — prints utilization/memory every 30s to stdout (visible in kubectl logs)
+nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv -l 30 &
+NVMON_PID=$!
+
 export NUM_GPUS=1
 
 CUDA_VISIBLE_DEVICES=0 uv run python \
@@ -104,8 +108,10 @@ CUDA_VISIBLE_DEVICES=0 uv run python \
     --weight_decay 1e-5 \
     --learning_rate 1e-4 \
     --global_batch_size 128 \
-    --dataloader_num_workers 4 \
+    --dataloader_num_workers 8 \
     --color_jitter_params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08
+
+kill $NVMON_PID 2>/dev/null || true
 
 echo "[run.sh] Training complete. Checkpoints saved to ${CHECKPOINT_DIR}."
 
