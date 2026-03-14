@@ -9,7 +9,7 @@ REPO_DIR="$HOME/Isaac-GR00T"
 
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
-echo "OCTOBER ==================="
+echo "NOVEMBER ==================="
 
 # Container has CUDA runtime but no toolkit (nvcc). Create a stub nvcc so
 # libraries (deepspeed/transformers) that check for it at import time don't crash.
