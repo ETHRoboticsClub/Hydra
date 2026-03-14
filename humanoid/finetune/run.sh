@@ -115,6 +115,7 @@ NVMON_PID=$!
 export NUM_GPUS=4
 
 pip install mpi4py --break-system-packages 2>/dev/null || uv pip install mpi4py
+pip install tyro --break-system-packages 2>/dev/null || uv pip install tyro
 
 torchrun --nproc_per_node=$NUM_GPUS --master_port=29500 \
     gr00t/experiment/launch_finetune.py \
