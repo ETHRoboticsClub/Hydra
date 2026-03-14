@@ -90,9 +90,33 @@ echo "[run.sh] Starting GR00T fine-tuning..."
 nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv -l 30 &
 NVMON_PID=$!
 
+# export NUM_GPUS=4
+
+# CUDA_VISIBLE_DEVICES=0 uv run python \
+#     gr00t/experiment/launch_finetune.py \
+#     --base_model_path nvidia/GR00T-N1.6-3B \
+#     --dataset_path "${DATASET_LOCAL_PATH}" \
+#     --embodiment_tag UNITREE_G1 \
+#     --no_tune_llm \
+#     --no_tune_visual \
+#     --num_gpus $NUM_GPUS \
+#     --output_dir "${CHECKPOINT_DIR}" \
+#     --save_total_limit 5 \
+#     --save_steps 500 \
+#     --max_steps 5000 \
+#     --warmup_ratio 0.05 \
+#     --weight_decay 1e-5 \
+#     --learning_rate 1e-4 \
+#     --global_batch_size 128 \
+#     --dataloader_num_workers 8 \
+#     --color_jitter_params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08
+
+
 export NUM_GPUS=4
 
-CUDA_VISIBLE_DEVICES=0 uv run python \
+pip install mpi4py --break-system-packages 2>/dev/null || uv pip install mpi4py
+
+torchrun --nproc_per_node=$NUM_GPUS --master_port=29500 \
     gr00t/experiment/launch_finetune.py \
     --base_model_path nvidia/GR00T-N1.6-3B \
     --dataset_path "${DATASET_LOCAL_PATH}" \
@@ -107,8 +131,9 @@ CUDA_VISIBLE_DEVICES=0 uv run python \
     --warmup_ratio 0.05 \
     --weight_decay 1e-5 \
     --learning_rate 1e-4 \
-    --global_batch_size 128 \
-    --dataloader_num_workers 8 \
+    --use_wandb \
+    --global_batch_size 1024 \
+    --dataloader_num_workers 6 \
     --color_jitter_params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08
 
 kill $NVMON_PID 2>/dev/null || true
