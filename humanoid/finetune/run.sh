@@ -114,10 +114,10 @@ NVMON_PID=$!
 
 export NUM_GPUS=4
 
-pip install mpi4py --break-system-packages 2>/dev/null || uv pip install mpi4py
-pip install tyro --break-system-packages 2>/dev/null || uv pip install tyro
+# pip install mpi4py --break-system-packages 2>/dev/null || uv pip install mpi4py
+# pip install tyro --break-system-packages 2>/dev/null || uv pip install tyro
 
-torchrun --nproc_per_node=$NUM_GPUS --master_port=29500 \
+uv run torchrun --nproc_per_node=$NUM_GPUS --master_port=29500 \
     gr00t/experiment/launch_finetune.py \
     --base_model_path nvidia/GR00T-N1.6-3B \
     --dataset_path "${DATASET_LOCAL_PATH}" \
