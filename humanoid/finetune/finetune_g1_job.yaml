@@ -12,7 +12,7 @@ spec:
     command:
       - /bin/bash
       - -c
-      - curl https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/humanoid/gpu-smoke-test/humanoid/finetune/run.sh -o /tmp/run.sh && bash /tmp/run.sh
+      - curl https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/baudoin-test/humanoid/finetune/run.sh -o /tmp/run.sh && bash /tmp/run.sh
     numNodes: 1
     resourcesPerNode:
       requests:
