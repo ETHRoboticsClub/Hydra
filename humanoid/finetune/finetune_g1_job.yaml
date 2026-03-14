@@ -1,7 +1,7 @@
 apiVersion: trainer.kubeflow.org/v1alpha1
 kind: TrainJob
 metadata:
-  name: groot-finetune-g1-3
+  name: groot-finetune-g1
   namespace: humanoid
 spec:
   runtimeRef:
@@ -34,10 +34,10 @@ spec:
         volumes:
           - name: data
             persistentVolumeClaim:
-              claimName: groot-finetune-data-3
+              claimName: groot-finetune-data
           - name: checkpoints
             persistentVolumeClaim:
-              claimName: groot-finetune-checkpoints-3
+              claimName: groot-finetune-checkpoints
           - name: dshm
             emptyDir:
               medium: Memory
