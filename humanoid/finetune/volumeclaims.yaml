@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: groot-finetune-data
+  name: groot-finetune-data-2
   namespace: humanoid
 spec:
   accessModes:
@@ -13,7 +13,7 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: groot-finetune-checkpoints
+  name: groot-finetune-checkpoints-2
   namespace: humanoid
 spec:
   accessModes:

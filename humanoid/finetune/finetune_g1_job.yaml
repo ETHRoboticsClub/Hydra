@@ -1,7 +1,7 @@
 apiVersion: trainer.kubeflow.org/v1alpha1
 kind: TrainJob
 metadata:
-  name: groot-finetune-g1
+  name: groot-finetune-g1-2
   namespace: humanoid
 spec:
   runtimeRef:
@@ -16,17 +16,17 @@ spec:
     numNodes: 1
     resourcesPerNode:
       requests:
-        nvidia.com/gpu: "1"
+        nvidia.com/gpu: "4"
       limits:
-        nvidia.com/gpu: "1"
+        nvidia.com/gpu: "4"
   podTemplateOverrides:
     - targetJobs:
         - name: node
       spec:
         serviceAccountName: training-sa
         nodeSelector:
-          karpenter.sh/nodepool: h100
-          node-tier: h100
+          karpenter.sh/nodepool: gpul
+          node-tier: gpul
         tolerations:
           - key: nvidia.com/gpu
             operator: Exists
@@ -34,10 +34,10 @@ spec:
         volumes:
           - name: data
             persistentVolumeClaim:
-              claimName: groot-finetune-data
+              claimName: groot-finetune-data-2
           - name: checkpoints
             persistentVolumeClaim:
-              claimName: groot-finetune-checkpoints
+              claimName: groot-finetune-checkpoints-2
           - name: dshm
             emptyDir:
               medium: Memory

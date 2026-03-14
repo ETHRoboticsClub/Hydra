@@ -90,7 +90,7 @@ echo "[run.sh] Starting GR00T fine-tuning..."
 nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv -l 30 &
 NVMON_PID=$!
 
-export NUM_GPUS=1
+export NUM_GPUS=4
 
 CUDA_VISIBLE_DEVICES=0 uv run python \
     gr00t/experiment/launch_finetune.py \
