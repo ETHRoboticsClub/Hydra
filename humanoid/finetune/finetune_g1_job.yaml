@@ -1,7 +1,7 @@
 apiVersion: trainer.kubeflow.org/v1alpha1
 kind: TrainJob
 metadata:
-  name: groot-finetune-g1
+  name: groot-finetune-g1-baudoin
   namespace: humanoid
 spec:
   runtimeRef:
@@ -25,8 +25,8 @@ spec:
       spec:
         serviceAccountName: training-sa
         nodeSelector:
-          karpenter.sh/nodepool: h100
-          node-tier: h100
+          karpenter.sh/nodepool: gpum
+          node-tier: gpum
         tolerations:
           - key: nvidia.com/gpu
             operator: Exists

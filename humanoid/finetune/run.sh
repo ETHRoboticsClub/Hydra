@@ -102,8 +102,8 @@ CUDA_VISIBLE_DEVICES=0 uv run python \
     --num_gpus $NUM_GPUS \
     --output_dir "${CHECKPOINT_DIR}" \
     --save_total_limit 5 \
-    --save_steps 500 \
-    --max_steps 5000 \
+    --save_steps 50 \
+    --max_steps 100 \
     --warmup_ratio 0.05 \
     --weight_decay 1e-5 \
     --learning_rate 1e-4 \
@@ -128,7 +128,7 @@ import os
 from huggingface_hub import upload_folder
 upload_folder(
     folder_path='${CHECKPOINT_DIR}',
-    repo_id='LucaFrat/G1-finetune-checkpoints',
+    repo_id='LucaFrat/g1-test-b',
     repo_type='model',
     token=os.environ['HF_TOKEN'],
 )
