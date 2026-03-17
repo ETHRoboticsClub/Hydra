@@ -19,12 +19,10 @@ spec:
         nvidia.com/gpu: "4"
         cpu: "40"
         memory: "320Gi"
-        ephemeral-storage: "400Gi"
       limits:
         nvidia.com/gpu: "4"
         cpu: "40"
         memory: "320Gi"
-        ephemeral-storage: "400Gi"
   podTemplateOverrides:
     - targetJobs:
         - name: node

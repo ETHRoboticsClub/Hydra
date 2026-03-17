@@ -101,13 +101,13 @@ uv run python -m torch.distributed.run --nproc_per_node=$NUM_GPUS --master_port=
     --no_tune_visual \
     --num_gpus $NUM_GPUS \
     --output_dir "${CHECKPOINT_DIR}" \
-    --save_total_limit 5 \
-    --save_steps 500 \
+    --save_total_limit 2 \
+    --save_steps 2500 \
     --max_steps 5000 \
     --warmup_ratio 0.05 \
     --weight_decay 1e-5 \
     --learning_rate 1e-4 \
-    --global_batch_size 512 \
+    --global_batch_size 8 \
     --dataloader_num_workers 6 \
     --color_jitter_params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08
 
