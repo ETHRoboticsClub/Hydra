@@ -121,9 +121,10 @@ if [ -f /secrets/hf/HF_TOKEN ]; then
   export HF_TOKEN=$(cat /secrets/hf/HF_TOKEN)
 fi
 
+UPLOAD_OK=false
 if [ -n "${HF_TOKEN:-}" ]; then
   echo "[run.sh] Uploading checkpoints to HuggingFace..."
-  python -c "
+  if python -c "
 import os
 from huggingface_hub import upload_folder
 upload_folder(
@@ -133,7 +134,20 @@ upload_folder(
     token=os.environ['HF_TOKEN'],
 )
 print('Upload complete.')
-"
+"; then
+    UPLOAD_OK=true
+  else
+    echo "[run.sh] ERROR: HuggingFace upload failed."
+  fi
 else
   echo "[run.sh] WARNING: HF_TOKEN not set, skipping checkpoint upload."
+fi
+
+if [ "$UPLOAD_OK" = false ]; then
+  echo "[run.sh] =================================================="
+  echo "[run.sh] Checkpoints are at: ${CHECKPOINT_DIR}"
+  echo "[run.sh] Run: kubectl cp humanoid/<pod-name>:${CHECKPOINT_DIR} ./g1_finetune -c node"
+  echo "[run.sh] Container will stay alive for 6 hours for manual download."
+  echo "[run.sh] =================================================="
+  sleep 21600
 fi
