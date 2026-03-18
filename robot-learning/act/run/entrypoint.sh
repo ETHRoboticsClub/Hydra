@@ -49,6 +49,7 @@ else
 fi
 
 # ── 4. Train ──────────────────────────────────────────────────────────────────
+ensure_dir "${CHECKPOINT_DIR}"
 echo "[run.sh] Starting lerobot-train..."
 
 export WANDB_MODE=disabled
