@@ -1,0 +1,1 @@
+kubectl -n robot-learning describe trainjob act-train
