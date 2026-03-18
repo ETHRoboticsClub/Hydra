@@ -1,7 +1,7 @@
 apiVersion: trainer.kubeflow.org/v1alpha1
 kind: TrainJob
 metadata:
-  name: sample-training
+  name: act-training
   namespace: robot-learning
 spec:
   runtimeRef:
@@ -11,7 +11,12 @@ spec:
     command:
       - /bin/bash
       - -c
-      - curl https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/master/sample/training/run.sh -o /tmp/run.sh && bash /tmp/run.sh
+      - >-
+        if [ -d /tmp/hydra/.git ]; then cd /tmp/hydra && git fetch origin act-new && git reset --hard origin/act-new;
+        else git clone --branch act-new --single-branch https://github.com/ETHRoboticsClub/Hydra.git /tmp/hydra; fi
+        && sudo chown -R "$(id -u):$(id -g)" /data /checkpoints
+        && cd /tmp/hydra/robot-learning/act/run/
+        && bash entrypoint.sh
     numNodes: 1
     resourcesPerNode:
       requests:
@@ -37,10 +42,14 @@ spec:
         volumes:
           - name: data
             persistentVolumeClaim:
-              claimName: testing1-data
+              claimName: act-data
           - name: checkpoints
             persistentVolumeClaim:
-              claimName: testing1-checkpoints
+              claimName: act-checkpoints
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 8Gi
         containers:
           - name: node
             volumeMounts:
@@ -48,3 +57,5 @@ spec:
                 mountPath: /data
               - name: checkpoints
                 mountPath: /checkpoints
+              - name: dshm
+                mountPath: /dev/shm

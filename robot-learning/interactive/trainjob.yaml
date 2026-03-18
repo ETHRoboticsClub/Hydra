@@ -1,7 +1,7 @@
 apiVersion: trainer.kubeflow.org/v1alpha1
 kind: TrainJob
 metadata:
-  name: sample-training
+  name: interactive-gpu
   namespace: robot-learning
 spec:
   runtimeRef:
@@ -10,8 +10,11 @@ spec:
     image: 916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-d866de5
     command:
       - /bin/bash
-      - -c
-      - curl https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/master/sample/training/run.sh -o /tmp/run.sh && bash /tmp/run.sh
+      - -lc
+      - |
+        cp /job-files/main.sh /tmp/main.sh
+        chmod +x /tmp/main.sh
+        exec /tmp/main.sh
     numNodes: 1
     resourcesPerNode:
       requests:
@@ -35,16 +38,13 @@ spec:
             operator: Exists
             effect: NoSchedule
         volumes:
-          - name: data
-            persistentVolumeClaim:
-              claimName: testing1-data
-          - name: checkpoints
-            persistentVolumeClaim:
-              claimName: testing1-checkpoints
+          - name: job-files
+            configMap:
+              name: interactive-gpu-files
+              defaultMode: 0755
         containers:
           - name: node
             volumeMounts:
-              - name: data
-                mountPath: /data
-              - name: checkpoints
-                mountPath: /checkpoints
+              - name: job-files
+                mountPath: /job-files
+                readOnly: true
