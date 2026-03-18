@@ -25,7 +25,7 @@ nvidia-smi
 
 # ── 1. Sync dependencies ──────────────────────────────────────────────────────
 echo "[run.sh] Syncing uv environment..."
-uv pip install --system lerobot
+uv pip install --user lerobot
 # cd "${SCRIPT_DIR}"
 # uv sync
 
