@@ -7,19 +7,20 @@ DATASET_ROOT="/data"
 CHECKPOINT_DIR="/checkpoints/act"
 DATA_DIR="${DATASET_ROOT}/${DATASET_REPO_ID}"
 
-# Create directory with fallback to sudo if needed (handles kube PVC mount permissions)
-ensure_dir() {
+# Fix ownership on a directory if not writable, with sudo fallback
+ensure_writable() {
   local dir="$1"
-  if [ -d "$dir" ]; then return 0; fi
-  if mkdir -p "$dir" 2>/dev/null; then return 0; fi
+  if [ -w "$dir" ]; then return 0; fi
   if command -v sudo >/dev/null 2>&1; then
-    sudo mkdir -p "$dir"
-    sudo chown "$(id -u):$(id -g)" "$dir"
+    sudo chown -R "$(id -u):$(id -g)" "$dir"
   else
-    echo "[run.sh] ERROR: Cannot create $dir (no sudo available)"
+    echo "[run.sh] ERROR: $dir is not writable (no sudo available)"
     exit 1
   fi
 }
+
+ensure_writable "${DATASET_ROOT}"
+ensure_writable "/checkpoints"
 
 nvidia-smi
 
@@ -39,7 +40,7 @@ fi
 # ── 3. Dataset check / download ───────────────────────────────────────────────
 if [ ! -d "${DATA_DIR}" ] || [ -z "$(ls -A "${DATA_DIR}" 2>/dev/null)" ]; then
   echo "[run.sh] Dataset not found at ${DATA_DIR}. Downloading from Hugging Face..."
-  ensure_dir "${DATA_DIR}"
+  mkdir -p "${DATA_DIR}"
   uv run hf download "${DATASET_REPO_ID}" \
     --repo-type dataset \
     --local-dir "${DATA_DIR}"
@@ -49,7 +50,6 @@ else
 fi
 
 # ── 4. Train ──────────────────────────────────────────────────────────────────
-ensure_dir "${CHECKPOINT_DIR}"
 echo "[run.sh] Starting lerobot-train..."
 
 export WANDB_MODE=disabled
