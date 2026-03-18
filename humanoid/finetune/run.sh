@@ -40,7 +40,7 @@ if [ -d "${DATASET_LOCAL_PATH}" ] && [ -n "$(ls -A "${DATASET_LOCAL_PATH}" 2>/de
   echo "[run.sh] Dataset found at ${DATASET_LOCAL_PATH}. Skipping download."
 else
   echo "[run.sh] Dataset not found. Downloading from Hugging Face..."
-  sudo mkdir -p "${DATASET_LOCAL_PATH}"
+  mkdir -p "${DATASET_LOCAL_PATH}"
   python -c "
 from huggingface_hub import snapshot_download
 snapshot_download(
