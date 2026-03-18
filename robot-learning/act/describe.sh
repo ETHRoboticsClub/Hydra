@@ -1,1 +1,4 @@
-kubectl -n robot-learning describe trainjob act-train
+#!/usr/bin/env bash
+set -euo pipefail
+
+kubectl -n robot-learning describe trainjob act-training

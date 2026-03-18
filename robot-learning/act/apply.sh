@@ -1,1 +1,5 @@
-kubectl apply -f train.yaml -f volumeclaims.yaml
+#!/usr/bin/env bash
+set -euo pipefail
+
+kubectl apply -f volumeclaims.yaml
+kubectl apply -f trainjob.yaml
