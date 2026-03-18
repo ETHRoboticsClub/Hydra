@@ -11,7 +11,7 @@ spec:
     command:
       - /bin/bash
       - -c
-      - git clone https://github.com/ETHRoboticsClub/Hydra.git /tmp/hydra && cd /tmp/hydra/robot-learning/act/run/ && bash entrypoint.sh
+      - git clone https://github.com/ETHRoboticsClub/Hydra.git /tmp/hydra && && cd /tmp/hydra && git checkout act-new && cd robot-learning/act/run/ && bash entrypoint.sh
     numNodes: 1
     resourcesPerNode:
       requests:
