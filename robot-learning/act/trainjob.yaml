@@ -11,7 +11,12 @@ spec:
     command:
       - /bin/bash
       - -c
-      - sudo chown -R "$(id -u):$(id -g)" "/data" && git clone https://github.com/ETHRoboticsClub/Hydra.git /data/hydra && cd /data/hydra && git checkout act-new && cd robot-learning/act/run/ && bash entrypoint.sh
+      - >-
+        if [ -d /tmp/hydra/.git ]; then cd /tmp/hydra && git fetch origin act-new && git reset --hard origin/act-new;
+        else git clone --branch act-new --single-branch https://github.com/ETHRoboticsClub/Hydra.git /tmp/hydra; fi
+        && sudo chown -R "$(id -u):$(id -g)" /data /checkpoints
+        && cd /tmp/hydra/robot-learning/act/run/
+        && bash entrypoint.sh
     numNodes: 1
     resourcesPerNode:
       requests:
@@ -41,6 +46,10 @@ spec:
           - name: checkpoints
             persistentVolumeClaim:
               claimName: act-checkpoints
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 8Gi
         containers:
           - name: node
             volumeMounts:
@@ -48,3 +57,5 @@ spec:
                 mountPath: /data
               - name: checkpoints
                 mountPath: /checkpoints
+              - name: dshm
+                mountPath: /dev/shm
