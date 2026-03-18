@@ -25,9 +25,8 @@ nvidia-smi
 
 # ── 1. Sync dependencies ──────────────────────────────────────────────────────
 echo "[run.sh] Syncing uv environment..."
-uv pip install --user lerobot
-# cd "${SCRIPT_DIR}"
-# uv sync
+cd "${SCRIPT_DIR}"
+uv sync
 
 # ── 2. Checkpoint guard ───────────────────────────────────────────────────────
 # If a checkpoint already exists, there is nothing to do — exit cleanly so the
