@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DATASET_REPO_ID="ETHRC/towelspring26"
+DATASET_REPO_ID="ETHRC/towelspring26-cleaned"
 DATASET_ROOT="/data"
 CHECKPOINT_DIR="/checkpoints/act"
 DATA_DIR="${DATASET_ROOT}/${DATASET_REPO_ID}"
@@ -22,9 +22,9 @@ fi
 uv pip sync pyproject.toml
 
 # ── 2. Checkpoint guard ───────────────────────────────────────────────────────
-# If a checkpoint already exists, there is nothing to do — exit cleanly so the
-# job is not accidentally re-run (and does not burn GPU time).
-if [ -d "${CHECKPOINT_DIR}" ] && [ -n "$(ls -A "${CHECKPOINT_DIR}" 2>/dev/null)" ]; then
+# If checkpoint artifacts already exist, there is nothing to do. Ignore the
+# bootstrap log so diagnostics do not trip the completion guard.
+if [ -d "${CHECKPOINT_DIR}" ] && [ -n "$(find "${CHECKPOINT_DIR}" -mindepth 1 ! -name 'bootstrap.log' -print -quit 2>/dev/null)" ]; then
   echo "[run.sh] Checkpoints found at ${CHECKPOINT_DIR} — training already complete. Exiting."
   exit 0
 fi
@@ -44,7 +44,8 @@ fi
 # ── 4. Train ──────────────────────────────────────────────────────────────────
 echo "[run.sh] Starting lerobot-train..."
 
-export WANDB_MODE=disabled
+# export WANDB_MODE=disabled
+export WANDB_MODE=online
 
 uv run --no-sync lerobot-train \
   --dataset.repo_id="${DATASET_REPO_ID}" \
@@ -53,5 +54,5 @@ uv run --no-sync lerobot-train \
   --output_dir="${CHECKPOINT_DIR}" \
   --job_name=act_training \
   --policy.device=cuda \
-  --policy.push_to_hub=false \
-  --wandb.enable=false
+  --policy.push_to_hub=true \
+  --wandb.enable=true
