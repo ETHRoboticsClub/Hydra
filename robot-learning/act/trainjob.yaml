@@ -11,7 +11,7 @@ spec:
     command:
       - /bin/bash
       - -c
-      - mkdir -p /tmp/act && curl -fsSL https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/master/robot-learning/act/main.sh -o /tmp/act/main.sh && curl -fsSL https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/master/robot-learning/act/pyproject.toml -o /tmp/act/pyproject.toml && bash /tmp/act/main.sh
+      - mkdir -p /tmp/act && curl -fsSL https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/act-new/robot-learning/act/main.sh -o /tmp/act/main.sh && curl -fsSL https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/act-new/robot-learning/act/pyproject.toml -o /tmp/act/pyproject.toml && bash /tmp/act/main.sh
     numNodes: 1
     resourcesPerNode:
       requests:
@@ -19,8 +19,8 @@ spec:
         memory: "4Gi"
         nvidia.com/gpu: "1"
       limits:
-        cpu: "2"
-        memory: "8Gi"
+        cpu: "8"
+        memory: "16Gi"
         nvidia.com/gpu: "1"
   podTemplateOverrides:
     - targetJobs:

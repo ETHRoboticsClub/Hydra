@@ -15,8 +15,12 @@ spec:
     numNodes: 1
     resourcesPerNode:
       requests:
+        cpu: "1"
+        memory: "4Gi"
         nvidia.com/gpu: "1"
       limits:
+        cpu: "8"
+        memory: "16Gi"
         nvidia.com/gpu: "1"
   podTemplateOverrides:
     - targetJobs:

@@ -25,7 +25,8 @@ fi
 # ── 3. Dataset check / download ───────────────────────────────────────────────
 if [ ! -d "${DATA_DIR}" ] || [ -z "$(ls -A "${DATA_DIR}" 2>/dev/null)" ]; then
   echo "[run.sh] Dataset not found at ${DATA_DIR}. Downloading from Hugging Face..."
-  mkdir -p "${DATA_DIR}"
+  sudo chown -R $USER:$USER "${DATA_DIR}"
+  mkdir  -p "${DATA_DIR}"
   uv run --no-sync huggingface-cli download "${DATASET_REPO_ID}" \
     --repo-type dataset \
     --local-dir "${DATA_DIR}"
