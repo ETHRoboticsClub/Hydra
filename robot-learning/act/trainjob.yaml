@@ -12,8 +12,8 @@ spec:
       - /bin/bash
       - -c
       - >-
-        if [ -d /tmp/hydra/.git ]; then cd /tmp/hydra && git fetch origin act-new && git reset --hard origin/act-new;
-        else git clone --branch act-new --single-branch https://github.com/ETHRoboticsClub/Hydra.git /tmp/hydra; fi
+        if [ -d /tmp/hydra/.git ]; then cd /tmp/hydra && git fetch origin master && git reset --hard origin/master;
+        else git clone --branch master --single-branch https://github.com/ETHRoboticsClub/Hydra.git /tmp/hydra; fi
         && sudo chown -R "$(id -u):$(id -g)" /data /checkpoints
         && cd /tmp/hydra/robot-learning/act/run/
         && bash entrypoint.sh
