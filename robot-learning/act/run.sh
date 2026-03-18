@@ -2,8 +2,8 @@
 set -euo pipefail
 
 DATASET_REPO_ID="ETHRC/towelspring26"
-DATASET_ROOT="/data"
-CHECKPOINT_DIR="/checkpoints/act"
+DATASET_ROOT="/act-data"
+CHECKPOINT_DIR="/act-checkpoints"
 DATA_DIR="${DATASET_ROOT}/${DATASET_REPO_ID}"
 
 # ── 1. Install lerobot ────────────────────────────────────────────────────────
