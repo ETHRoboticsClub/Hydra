@@ -11,10 +11,13 @@ export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
 echo "NOVEMBER ==================="
 
+# Fix EBS volume permissions
+sudo chown -R $(id -u):$(id -g) /data /checkpoints
+
 # Container has CUDA runtime but no toolkit (nvcc). Create a stub nvcc so
 # libraries (deepspeed/transformers) that check for it at import time don't crash.
-export CUDA_HOME="$HOME/.cuda_stub"
-sudo mkdir -p "${CUDA_HOME}/bin"
+export CUDA_HOME="/data/.cuda_stub"
+mkdir -p "${CUDA_HOME}/bin"
 printf '#!/bin/sh\necho "nvcc: NVIDIA (R) Cuda compiler driver"\necho "Cuda compilation tools, release 12.4, V12.4.131"\n' > "${CUDA_HOME}/bin/nvcc"
 chmod +x "${CUDA_HOME}/bin/nvcc"
 export PATH="${CUDA_HOME}/bin:${PATH}"
