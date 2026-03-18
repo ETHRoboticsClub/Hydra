@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DATASET_LOCAL_PATH="$HOME/dataset/G1-sim"
-CHECKPOINT_DIR="$HOME/checkpoints/g1_finetune"
+DATASET_LOCAL_PATH="/data/G1-sim"
+CHECKPOINT_DIR="/checkpoints/g1_finetune"
 REPO_URL="https://github.com/LucaFrat/Isaac-GR00T.git"
 REPO_DIR="$HOME/Isaac-GR00T"
 
@@ -14,7 +14,7 @@ echo "NOVEMBER ==================="
 # Container has CUDA runtime but no toolkit (nvcc). Create a stub nvcc so
 # libraries (deepspeed/transformers) that check for it at import time don't crash.
 export CUDA_HOME="$HOME/.cuda_stub"
-mkdir -p "${CUDA_HOME}/bin"
+sudo mkdir -p "${CUDA_HOME}/bin"
 printf '#!/bin/sh\necho "nvcc: NVIDIA (R) Cuda compiler driver"\necho "Cuda compilation tools, release 12.4, V12.4.131"\n' > "${CUDA_HOME}/bin/nvcc"
 chmod +x "${CUDA_HOME}/bin/nvcc"
 export PATH="${CUDA_HOME}/bin:${PATH}"
@@ -37,7 +37,7 @@ if [ -d "${DATASET_LOCAL_PATH}" ] && [ -n "$(ls -A "${DATASET_LOCAL_PATH}" 2>/de
   echo "[run.sh] Dataset found at ${DATASET_LOCAL_PATH}. Skipping download."
 else
   echo "[run.sh] Dataset not found. Downloading from Hugging Face..."
-  mkdir -p "${DATASET_LOCAL_PATH}"
+  sudo mkdir -p "${DATASET_LOCAL_PATH}"
   python -c "
 from huggingface_hub import snapshot_download
 snapshot_download(
