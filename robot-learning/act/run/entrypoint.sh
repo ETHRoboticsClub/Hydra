@@ -27,7 +27,6 @@ nvidia-smi
 echo "[run.sh] Syncing uv environment..."
 cd "${SCRIPT_DIR}"
 uv sync
-uv pip install huggingface-hub[cli]
 
 # ── 2. Checkpoint guard ───────────────────────────────────────────────────────
 # If a checkpoint already exists, there is nothing to do — exit cleanly so the
@@ -41,7 +40,7 @@ fi
 if [ ! -d "${DATA_DIR}" ] || [ -z "$(ls -A "${DATA_DIR}" 2>/dev/null)" ]; then
   echo "[run.sh] Dataset not found at ${DATA_DIR}. Downloading from Hugging Face..."
   ensure_dir "${DATA_DIR}"
-  uv run --with huggingface-hub[cli] huggingface-cli download "${DATASET_REPO_ID}" \
+  uv run python -m huggingface_hub.commands.huggingface_cli download "${DATASET_REPO_ID}" \
     --repo-type dataset \
     --local-dir "${DATA_DIR}"
   echo "[run.sh] Dataset download complete."
