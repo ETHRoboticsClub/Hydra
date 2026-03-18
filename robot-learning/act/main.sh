@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DATASET_REPO_ID="ETHRC/towel_base_with_rewards"
+DATASET_REPO_ID="ETHRC/towelspring26"
 DATASET_ROOT="/data"
 CHECKPOINT_DIR="/checkpoints/act"
 DATA_DIR="${DATASET_ROOT}/${DATASET_REPO_ID}"
