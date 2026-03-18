@@ -11,7 +11,7 @@ spec:
     command:
       - /bin/bash
       - -c
-      - curl https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/master/sample/training/run.sh -o /tmp/run.sh && bash /tmp/run.sh
+      - mkdir -p /tmp/act && curl -fsSL https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/master/robot-learning/act/main.sh -o /tmp/act/main.sh && curl -fsSL https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/master/robot-learning/act/pyproject.toml -o /tmp/act/pyproject.toml && bash /tmp/act/main.sh
     numNodes: 1
     resourcesPerNode:
       requests:

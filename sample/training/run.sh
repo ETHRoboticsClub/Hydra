@@ -6,6 +6,8 @@ DATASET_ROOT="/data"
 CHECKPOINT_DIR="/checkpoints/act"
 DATA_DIR="${DATASET_ROOT}/${DATASET_REPO_ID}"
 
+nvidia-smi
+
 # ── 1. Install lerobot ────────────────────────────────────────────────────────
 echo "[run.sh] Installing lerobot..."
 

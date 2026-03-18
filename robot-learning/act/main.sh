@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DATASET_REPO_ID="ETHRC/towel_base_with_rewards"
 DATASET_ROOT="/data"
 CHECKPOINT_DIR="/checkpoints/act"
 DATA_DIR="${DATASET_ROOT}/${DATASET_REPO_ID}"
 
-# ── 1. Install lerobot ────────────────────────────────────────────────────────
-echo "[run.sh] Installing lerobot..."
+nvidia-smi
 
-pip install lerobot --break-system-packages
-
-export PATH="$HOME/.local/bin:$PATH"
+# ── 1. Sync dependencies ──────────────────────────────────────────────────────
+echo "[run.sh] Syncing uv environment..."
+cd "${SCRIPT_DIR}"
+uv sync
 
 # ── 2. Checkpoint guard ───────────────────────────────────────────────────────
 # If a checkpoint already exists, there is nothing to do — exit cleanly so the
@@ -25,7 +26,7 @@ fi
 if [ ! -d "${DATA_DIR}" ] || [ -z "$(ls -A "${DATA_DIR}" 2>/dev/null)" ]; then
   echo "[run.sh] Dataset not found at ${DATA_DIR}. Downloading from Hugging Face..."
   mkdir -p "${DATA_DIR}"
-  huggingface-cli download "${DATASET_REPO_ID}" \
+  uv run --no-sync huggingface-cli download "${DATASET_REPO_ID}" \
     --repo-type dataset \
     --local-dir "${DATA_DIR}"
   echo "[run.sh] Dataset download complete."
@@ -38,7 +39,7 @@ echo "[run.sh] Starting lerobot-train..."
 
 export WANDB_MODE=disabled
 
-lerobot-train \
+uv run --no-sync lerobot-train \
   --dataset.repo_id="${DATASET_REPO_ID}" \
   --dataset.root="${DATASET_ROOT}" \
   --policy.type=act \
