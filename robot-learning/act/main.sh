@@ -7,6 +7,20 @@ DATASET_ROOT="/data"
 CHECKPOINT_DIR="/checkpoints/act"
 DATA_DIR="${DATASET_ROOT}/${DATASET_REPO_ID}"
 
+# Create directory with fallback to sudo if needed (handles kube PVC mount permissions)
+ensure_dir() {
+  local dir="$1"
+  if [ -d "$dir" ]; then return 0; fi
+  if mkdir -p "$dir" 2>/dev/null; then return 0; fi
+  if command -v sudo >/dev/null 2>&1; then
+    sudo mkdir -p "$dir"
+    sudo chown "$(id -u):$(id -g)" "$dir"
+  else
+    echo "[run.sh] ERROR: Cannot create $dir (no sudo available)"
+    exit 1
+  fi
+}
+
 nvidia-smi
 
 # ── 1. Sync dependencies ──────────────────────────────────────────────────────
@@ -25,8 +39,7 @@ fi
 # ── 3. Dataset check / download ───────────────────────────────────────────────
 if [ ! -d "${DATA_DIR}" ] || [ -z "$(ls -A "${DATA_DIR}" 2>/dev/null)" ]; then
   echo "[run.sh] Dataset not found at ${DATA_DIR}. Downloading from Hugging Face..."
-  sudo mkdir  -p "${DATA_DIR}"
-  sudo chown -R $USER:$USER "${DATA_DIR}"
+  ensure_dir "${DATA_DIR}"
   uv run --no-sync huggingface-cli download "${DATASET_REPO_ID}" \
     --repo-type dataset \
     --local-dir "${DATA_DIR}"
