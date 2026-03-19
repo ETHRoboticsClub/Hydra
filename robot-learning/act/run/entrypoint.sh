@@ -75,7 +75,7 @@ uv run --active --no-sync lerobot-train \
   --policy.type=act \
   --policy.repo_id="${POLICY_REPO_ID:-ETHRC/act-towelspring26}" \
   --output_dir="${CHECKPOINT_DIR}" \
-  --batch_size="${TRAIN_BATCH_SIZE:-28}" \
+  --batch_size="${TRAIN_BATCH_SIZE:-29}" \
   --num_workers="${NUM_WORKERS:-0}" \
   --dataset.video_backend="${VIDEO_BACKEND:-torchcodec}" \
   --save_freq=900 \
