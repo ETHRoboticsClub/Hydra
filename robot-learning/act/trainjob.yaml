@@ -15,8 +15,8 @@ spec:
         set -euxo pipefail
         && mkdir -p /checkpoints/act
         && exec > >(tee -a /checkpoints/act/bootstrap.log) 2>&1
-        && if [ -d /tmp/hydra/.git ]; then cd /tmp/hydra && git fetch origin act-new && git reset --hard origin/act-new;
-        else git clone --branch act-new --single-branch https://github.com/ETHRoboticsClub/Hydra.git /tmp/hydra; fi
+        && if [ -d /tmp/hydra/.git ]; then cd /tmp/hydra && git fetch origin "${HYDRA_GIT_BRANCH}" && git reset --hard "origin/${HYDRA_GIT_BRANCH}";
+        else git clone --branch "${HYDRA_GIT_BRANCH}" --single-branch https://github.com/ETHRoboticsClub/Hydra.git /tmp/hydra; fi
         && sudo chown -R "$(id -u):$(id -g)" /data /checkpoints
         && ls -l /var/run/secrets/wandb
         && export WANDB_API_KEY="$(cat /var/run/secrets/wandb/WANDB_API_KEY)"
@@ -60,6 +60,11 @@ spec:
               secretName: wandb-secret
         containers:
           - name: node
+            env:
+              - name: HYDRA_GIT_BRANCH
+                value: act-new
+              - name: DATASET_REVISION
+                value: trimmed
             volumeMounts:
               - name: data
                 mountPath: /data

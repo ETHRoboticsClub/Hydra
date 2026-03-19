@@ -6,6 +6,7 @@ DATASET_REPO_ID="ETHRC/towelspring26-cleaned"
 DATASET_ROOT="/data"
 CHECKPOINT_DIR="/checkpoints/act"
 DATA_DIR="${DATASET_ROOT}/${DATASET_REPO_ID}"
+DATASET_REVISION="${DATASET_REVISION:-trimmed}"
 
 # Cache uv packages and venv on persistent storage
 export UV_CACHE_DIR="/data/.uv-cache"
@@ -50,7 +51,7 @@ export WANDB_MODE=online
 uv run --no-sync lerobot-train \
   --dataset.repo_id="${DATASET_REPO_ID}" \
   --dataset.root="${DATASET_ROOT}" \
-  --dataset.revision=trimmed \
+  --dataset.revision="${DATASET_REVISION}" \
   --policy.type=act \
   --output_dir="${CHECKPOINT_DIR}" \
   --job_name=act_training \
