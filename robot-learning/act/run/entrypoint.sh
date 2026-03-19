@@ -75,10 +75,9 @@ uv run --active --no-sync lerobot-train \
   --policy.type=act \
   --policy.repo_id="${POLICY_REPO_ID:-ETHRC/act-towelspring26}" \
   --output_dir="${CHECKPOINT_DIR}" \
-  --batch_size=24 \
+  --batch_size=28 \
   --policy.push_to_hub=true \
-  --job_name=act_training \
+  --job_name=act_training_1 \
   --wandb.project=act \
   --wandb.enable=true \
   --policy.device=cuda
-  
