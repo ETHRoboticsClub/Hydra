@@ -50,6 +50,7 @@ export WANDB_MODE=online
 uv run --no-sync lerobot-train \
   --dataset.repo_id="${DATASET_REPO_ID}" \
   --dataset.root="${DATASET_ROOT}" \
+  --dataset.revision=trimmed \
   --policy.type=act \
   --output_dir="${CHECKPOINT_DIR}" \
   --job_name=act_training \
