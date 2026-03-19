@@ -15,7 +15,7 @@ export VIRTUAL_ENV="/data/.venv"
 nvidia-smi
 
 # ── 1. Sync dependencies ──────────────────────────────────────────────────────
-echo "[run.sh] Syncing uv environment..."
+echo "[entrypoint.sh] Syncing uv environment..."
 cd "${SCRIPT_DIR}"
 if [ ! -d "$VIRTUAL_ENV" ]; then
   uv venv "$VIRTUAL_ENV"
@@ -26,24 +26,25 @@ uv pip sync pyproject.toml
 # If checkpoint artifacts already exist, there is nothing to do. Ignore the
 # bootstrap log so diagnostics do not trip the completion guard.
 if [ -d "${CHECKPOINT_DIR}" ] && [ -n "$(find "${CHECKPOINT_DIR}" -mindepth 1 ! -name 'bootstrap.log' -print -quit 2>/dev/null)" ]; then
-  echo "[run.sh] Checkpoints found at ${CHECKPOINT_DIR} — training already complete. Exiting."
+  echo "[entrypoint.sh] Checkpoints found at ${CHECKPOINT_DIR} — training already complete. Exiting."
   exit 0
 fi
 
 # ── 3. Dataset check / download ───────────────────────────────────────────────
+# Use hf, do not use huggingface-cli.
 if [ ! -d "${DATA_DIR}" ] || [ -z "$(ls -A "${DATA_DIR}" 2>/dev/null)" ]; then
-  echo "[run.sh] Dataset not found at ${DATA_DIR}. Downloading from Hugging Face..."
+  echo "[entrypoint.sh] Dataset not found at ${DATA_DIR}. Downloading from Hugging Face..."
   mkdir -p "${DATA_DIR}"
-  uv run huggingface-cli download "${DATASET_REPO_ID}" \
+  uv run hf download "${DATASET_REPO_ID}" \
     --repo-type dataset \
     --local-dir "${DATA_DIR}"
-  echo "[run.sh] Dataset download complete."
+  echo "[entrypoint.sh] Dataset download complete."
 else
-  echo "[run.sh] Dataset found at ${DATA_DIR}. Skipping download."
+  echo "[entrypoint.sh] Dataset found at ${DATA_DIR}. Skipping download."
 fi
 
 # ── 4. Train ──────────────────────────────────────────────────────────────────
-echo "[run.sh] Starting lerobot-train..."
+echo "[entrypoint.sh] Starting lerobot-train..."
 
 # export WANDB_MODE=disabled
 export WANDB_MODE=online
