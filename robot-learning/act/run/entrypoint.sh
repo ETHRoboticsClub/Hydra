@@ -24,6 +24,9 @@ fi
 . "${VIRTUAL_ENV}/bin/activate"
 uv sync --active --no-install-project --no-dev
 
+# TODO: REMOVE
+rm -rf /checkpoints/act
+
 # ── 2. Checkpoint guard ───────────────────────────────────────────────────────
 # If checkpoint artifacts already exist, there is nothing to do. Ignore the
 # bootstrap log so diagnostics do not trip the completion guard.
