@@ -21,7 +21,8 @@ cd "${SCRIPT_DIR}"
 if [ ! -d "$VIRTUAL_ENV" ]; then
   uv venv "$VIRTUAL_ENV"
 fi
-uv pip sync --python "${VIRTUAL_ENV}/bin/python" pyproject.toml
+. "${VIRTUAL_ENV}/bin/activate"
+uv sync --active --no-install-project --no-dev
 
 # ── 2. Checkpoint guard ───────────────────────────────────────────────────────
 # If checkpoint artifacts already exist, there is nothing to do. Ignore the

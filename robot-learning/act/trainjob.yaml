@@ -20,8 +20,6 @@ spec:
         && exec > >(tee -a /checkpoints/act/bootstrap.log) 2>&1
         && if [ -d /tmp/hydra/.git ]; then cd /tmp/hydra && git fetch origin "${HYDRA_GIT_BRANCH}" && git reset --hard "origin/${HYDRA_GIT_BRANCH}";
         else git clone --branch "${HYDRA_GIT_BRANCH}" --single-branch https://github.com/ETHRoboticsClub/Hydra.git /tmp/hydra; fi
-        && ls -l /var/run/secrets/wandb
-        && export WANDB_API_KEY="$(cat /var/run/secrets/wandb/WANDB_API_KEY)"
         && cd /tmp/hydra/robot-learning/act/run/
         && DATASET_REVISION="${DATASET_REVISION}" bash entrypoint.sh
     numNodes: 1
@@ -57,11 +55,19 @@ spec:
             emptyDir:
               medium: Memory
               sizeLimit: 8Gi
-          - name: wandb-secret
-            secret:
-              secretName: wandb-secret
         containers:
           - name: node
+            env:
+              - name: WANDB_API_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: wandb-secret
+                    key: WANDB_API_KEY
+              - name: HF_TOKEN
+                valueFrom:
+                  secretKeyRef:
+                    name: hf-secret
+                    key: HF_TOKEN
             volumeMounts:
               - name: data
                 mountPath: /data
@@ -69,6 +75,3 @@ spec:
                 mountPath: /checkpoints
               - name: dshm
                 mountPath: /dev/shm
-              - name: wandb-secret
-                mountPath: /var/run/secrets/wandb
-                readOnly: true
