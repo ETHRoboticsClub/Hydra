@@ -13,6 +13,8 @@ spec:
       - -c
       - >-
         set -euxo pipefail
+        && HYDRA_GIT_BRANCH=act-new
+        && DATASET_REVISION=trimmed
         && mkdir -p /checkpoints/act
         && exec > >(tee -a /checkpoints/act/bootstrap.log) 2>&1
         && if [ -d /tmp/hydra/.git ]; then cd /tmp/hydra && git fetch origin "${HYDRA_GIT_BRANCH}" && git reset --hard "origin/${HYDRA_GIT_BRANCH}";
@@ -21,7 +23,7 @@ spec:
         && ls -l /var/run/secrets/wandb
         && export WANDB_API_KEY="$(cat /var/run/secrets/wandb/WANDB_API_KEY)"
         && cd /tmp/hydra/robot-learning/act/run/
-        && bash entrypoint.sh
+        && DATASET_REVISION="${DATASET_REVISION}" bash entrypoint.sh
     numNodes: 1
     resourcesPerNode:
       requests:
@@ -60,11 +62,6 @@ spec:
               secretName: wandb-secret
         containers:
           - name: node
-            env:
-              - name: HYDRA_GIT_BRANCH
-                value: act-new
-              - name: DATASET_REVISION
-                value: trimmed
             volumeMounts:
               - name: data
                 mountPath: /data
