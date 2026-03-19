@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DATASET_REPO_ID="ETHRC/towelspring26-cleaned"
 DATASET_ROOT="/data"
 CHECKPOINT_DIR="/checkpoints/act"
@@ -17,7 +16,7 @@ nvidia-smi
 
 # ── 1. Sync dependencies ──────────────────────────────────────────────────────
 echo "[entrypoint.sh] Syncing uv environment..."
-cd "${SCRIPT_DIR}"
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ ! -d "$VIRTUAL_ENV" ]; then
   uv venv "$VIRTUAL_ENV"
 fi
@@ -60,6 +59,7 @@ uv run --active --no-sync lerobot-train \
   --dataset.root="${DATASET_ROOT}" \
   --dataset.revision="${DATASET_REVISION}" \
   --policy.type=act \
+  --policy.repo_id="${POLICY_REPO_ID:-ETHRC/act-towelspring26}" \
   --output_dir="${CHECKPOINT_DIR}" \
   --job_name=act_training \
   --policy.device=cuda \
