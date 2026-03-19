@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# User-facing configuration
 DATASET_REPO_ID="ETHRC/towelspring26-cleaned"
-DATASET_ROOT="/data"
-CHECKPOINT_DIR="/checkpoints/act"
-DATA_DIR="${DATASET_ROOT}/${DATASET_REPO_ID}"
 DATASET_REVISION="${DATASET_REVISION:-trimmed}"
+CHECKPOINT_DIR="/checkpoints/act"
 
 # Cache uv packages and venv on persistent storage
 export UV_CACHE_DIR="/data/.uv-cache"
@@ -36,16 +35,31 @@ fi
 
 # ── 3. Dataset check / download ───────────────────────────────────────────────
 # Use hf, do not use huggingface-cli.
-if [ ! -d "${DATA_DIR}" ] || [ -z "$(ls -A "${DATA_DIR}" 2>/dev/null)" ]; then
-  echo "[entrypoint.sh] Dataset not found at ${DATA_DIR}. Downloading from Hugging Face..."
+DATASET_ROOT="/data"
+DATA_DIR="${DATASET_ROOT}/${DATASET_REPO_ID}"
+DATASET_REVISION_FILE="${DATA_DIR}/.dataset_revision"
+CURRENT_DATASET_REVISION=""
+if [ -f "${DATASET_REVISION_FILE}" ]; then
+  CURRENT_DATASET_REVISION="$(<"${DATASET_REVISION_FILE}")"
+fi
+
+if [ ! -d "${DATA_DIR}" ] || [ -z "$(ls -A "${DATA_DIR}" 2>/dev/null)" ] || [ "${CURRENT_DATASET_REVISION}" != "${DATASET_REVISION}" ]; then
+  if [ "${CURRENT_DATASET_REVISION}" != "" ] && [ "${CURRENT_DATASET_REVISION}" != "${DATASET_REVISION}" ]; then
+    echo "[entrypoint.sh] Dataset revision mismatch at ${DATA_DIR}: found ${CURRENT_DATASET_REVISION}, need ${DATASET_REVISION}. Refreshing dataset."
+  else
+    echo "[entrypoint.sh] Dataset not found at ${DATA_DIR}. Downloading from Hugging Face..."
+  fi
+
+  rm -rf "${DATA_DIR}"
   mkdir -p "${DATA_DIR}"
   uv run --active --no-sync hf download "${DATASET_REPO_ID}" \
     --repo-type dataset \
     --revision "${DATASET_REVISION}" \
     --local-dir "${DATA_DIR}"
+  printf '%s\n' "${DATASET_REVISION}" > "${DATASET_REVISION_FILE}"
   echo "[entrypoint.sh] Dataset download complete."
 else
-  echo "[entrypoint.sh] Dataset found at ${DATA_DIR}. Skipping download."
+  echo "[entrypoint.sh] Dataset revision ${DATASET_REVISION} already present at ${DATA_DIR}. Skipping download."
 fi
 
 # ── 4. Train ──────────────────────────────────────────────────────────────────
@@ -61,7 +75,10 @@ uv run --active --no-sync lerobot-train \
   --policy.type=act \
   --policy.repo_id="${POLICY_REPO_ID:-ETHRC/act-towelspring26}" \
   --output_dir="${CHECKPOINT_DIR}" \
-  --job_name=act_training \
-  --policy.device=cuda \
+  --batch_size=24 \
   --policy.push_to_hub=true \
-  --wandb.enable=true
+  --job_name=act_training \
+  --wandb.project=act \
+  --wandb.enable=true \
+  --policy.device=cuda
+  
