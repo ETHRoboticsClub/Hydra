@@ -7,10 +7,8 @@ spec:
   runtimeRef:
     name: torch-distributed
   trainer:
-    # AWS Deep Learning Container — matches "Deep Learning OSS Nvidia Driver AMI GPU PyTorch 2.x (Ubuntu 22.04)"
-    # CUDA 12.6, cuDNN, NCCL, PyTorch 2.7, Python 3.11 pre-installed
-    # Replace <region> with your AWS region (e.g. us-east-1)
-    image: 763104351884.dkr.ecr.us-east-1.amazonaws.com/pytorch-training:2.7.0-gpu-py311-cu126-ubuntu22.04-ec2
+    # NVIDIA NGC PyTorch — CUDA 12.6, PyTorch 2.5, Python 3.10, Ubuntu 22.04
+    image: nvcr.io/nvidia/pytorch:24.12-py3
     command:
       - /bin/bash
       - -lc
