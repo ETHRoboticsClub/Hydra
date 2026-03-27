@@ -162,9 +162,19 @@ The PVC must be deleted manually — deleting the job alone does not delete the 
 
 ## Auto-shutdown
 
-The pod shuts itself down after 12 hours by default. The EC2 instance is terminated and you stop paying for compute. The PVC is not deleted — your data is safe.
+**Default: 12 hours.** The pod shuts itself down after 12h, the EC2 instance is terminated, and you stop paying for compute. The PVC is not deleted — your data is safe.
 
-To disable: `SHUTDOWN_AFTER=0 bash cosmos-predict2/libero/start.sh`
+```bash
+# Default (12h)
+bash cosmos-predict2/libero/start.sh
+
+# Custom timeout
+SHUTDOWN_AFTER=21600 bash cosmos-predict2/libero/start.sh   # 6h
+SHUTDOWN_AFTER=86400 bash cosmos-predict2/libero/start.sh   # 24h
+
+# No timeout
+SHUTDOWN_AFTER=0 bash cosmos-predict2/libero/start.sh
+```
 
 ## Data layout on the volume
 
