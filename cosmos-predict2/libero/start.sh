@@ -60,4 +60,4 @@ kubectl -n "${NAMESPACE}" wait --for=condition=Ready "pod/${POD_NAME}" --timeout
 # Attach to existing tmux session or create a new one.
 # Commands keep running inside tmux even if your laptop disconnects.
 kubectl -n "${NAMESPACE}" exec -it "${POD_NAME}" -- bash -lc \
-  'tmux attach-session -t main 2>/dev/null || tmux new-session -s main -c /data/cosmos-predict2'
+  'command -v tmux &>/dev/null && (tmux attach-session -t main 2>/dev/null || tmux new-session -s main -c /data/cosmos-predict2) || (cd /data/cosmos-predict2 2>/dev/null || cd /data && exec bash)'
