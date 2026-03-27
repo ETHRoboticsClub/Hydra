@@ -8,9 +8,9 @@ SHUTDOWN_AFTER="${SHUTDOWN_AFTER:-43200}"  # default 12h, set to 0 to disable
 echo "[cosmos-libero] Container bootstrap starting..."
 nvidia-smi || true
 
-# Install tmux so commands survive disconnects
+# Install tmux so commands survive disconnects (non-fatal if it fails)
 if ! command -v tmux &>/dev/null; then
-  apt-get install -y -qq tmux
+  apt-get update -qq && apt-get install -y -qq tmux || echo "[cosmos-libero] Warning: tmux install failed, continuing without it."
 fi
 
 # Install uv if not present (not included in the AWS DLC image)
