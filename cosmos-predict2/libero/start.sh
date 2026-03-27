@@ -56,5 +56,8 @@ if [ -z "${POD_NAME:-}" ]; then
 fi
 
 kubectl -n "${NAMESPACE}" wait --for=condition=Ready "pod/${POD_NAME}" --timeout=15m
+
+# Attach to existing tmux session or create a new one.
+# Commands keep running inside tmux even if your laptop disconnects.
 kubectl -n "${NAMESPACE}" exec -it "${POD_NAME}" -- bash -lc \
-  'cd /data/cosmos-predict2 2>/dev/null || cd /data && exec bash'
+  'tmux attach-session -t main 2>/dev/null || tmux new-session -s main -c /data/cosmos-predict2'

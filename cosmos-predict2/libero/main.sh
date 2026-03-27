@@ -3,8 +3,15 @@ set -euo pipefail
 
 REPO_DIR="/data/cosmos-predict2"
 
+SHUTDOWN_AFTER="${SHUTDOWN_AFTER:-43200}"  # default 12h, set to 0 to disable
+
 echo "[cosmos-libero] Container bootstrap starting..."
 nvidia-smi || true
+
+# Install tmux so commands survive disconnects
+if ! command -v tmux &>/dev/null; then
+  apt-get install -y -qq tmux
+fi
 
 # Install uv if not present (not included in the AWS DLC image)
 # Install to /data/.uv-bin so it survives pod restarts without re-downloading
@@ -79,4 +86,9 @@ Quick-start — run steps manually inside this shell:
 Pod stays alive until the TrainJob is deleted.
 EOF
 
-exec sleep infinity
+if [ "${SHUTDOWN_AFTER}" -gt 0 ]; then
+  echo "[cosmos-libero] Pod will shut down in $((SHUTDOWN_AFTER / 3600))h."
+  sleep "${SHUTDOWN_AFTER}"
+else
+  sleep infinity
+fi
