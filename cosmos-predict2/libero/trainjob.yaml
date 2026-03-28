@@ -15,16 +15,17 @@ spec:
       - |
         cp /job-files/main.sh /tmp/main.sh
         chmod +x /tmp/main.sh
+        true  # env-inject-placeholder
         exec /tmp/main.sh
     numNodes: 1
     resourcesPerNode:
       requests:
-        cpu: "2"
-        memory: "8Gi"
+        cpu: "16"
+        memory: "64Gi"
         nvidia.com/gpu: "1"
       limits:
-        cpu: "4"
-        memory: "14Gi"
+        cpu: "44"
+        memory: "160Gi"
         nvidia.com/gpu: "1"
   podTemplateOverrides:
     - targetJobs:

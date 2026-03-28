@@ -36,6 +36,35 @@ else
     https://github.com/ETHRoboticsClub/cosmos-predict2.git "${REPO_DIR}"
 fi
 
+# Sync dependencies and activate venv
+cd "${REPO_DIR}"
+uv sync --extra cu126
+source .venv/bin/activate
+
+if [ "${FULLRUN:-}" = "1" ]; then
+  echo "[cosmos-libero] Starting full training run (${NPROC:-1} GPU(s))..."
+
+  IMAGINAIRE_OUTPUT_ROOT=outputs torchrun \
+    --nproc_per_node="${NPROC:-1}" \
+    --master_port=12341 \
+    -m scripts.train \
+    --config=cosmos_predict2/configs/base/config.py -- \
+    experiment=predict2_video2world_training_2b_libero_cosmos
+
+  echo "[cosmos-libero] Converting checkpoint..."
+  CKPT_DIR=outputs/posttraining/video2world_lora/2b_libero_cosmos/checkpoints
+  ITER=$(cat "${CKPT_DIR}/latest_checkpoint.txt")
+  python convert_distcp.py "${CKPT_DIR}/${ITER}/model" "${CKPT_DIR}/${ITER}"
+
+  echo "[cosmos-libero] Running evaluation..."
+  python scripts/eval_libero_cosmos.py --out eval/base
+  python scripts/eval_libero_cosmos.py --out eval/finetuned \
+    --lora-checkpoint "${CKPT_DIR}/${ITER}/model_ema_bf16.pt"
+
+  echo "[cosmos-libero] Full run complete. Shutting down."
+  exit 0
+fi
+
 cat <<'EOF'
 
 [cosmos-libero] Ready. Repo is at /data/cosmos-predict2

@@ -6,10 +6,20 @@
 # Let Karpenter pick a GPU from the pool
 bash cosmos-predict2/libero/start.sh
 
-# Request a specific GPU type
-bash cosmos-predict2/libero/start.sh --instance-type g6e.xlarge    # 1× L40S 48GB
-bash cosmos-predict2/libero/start.sh --instance-type g5.xlarge     # 1× A10G 24GB
-bash cosmos-predict2/libero/start.sh --instance-type p4de.24xlarge # 8× A100 80GB
+# Request a specific instance (resources are set automatically to the machine's max)
+bash cosmos-predict2/libero/start.sh --instance-type g6e.xlarge    # 1× L40S, 32GB RAM
+bash cosmos-predict2/libero/start.sh --instance-type g6e.2xlarge   # 1× L40S, 64GB RAM
+bash cosmos-predict2/libero/start.sh --instance-type g6e.12xlarge  # 4× L40S, 384GB RAM
+bash cosmos-predict2/libero/start.sh --instance-type p5.4xlarge    # 1× H100, 192GB RAM
+
+# Pass a WandB API key (available as WANDB_API_KEY in the shell, not stored anywhere)
+bash cosmos-predict2/libero/start.sh --wandb-key <your-key>
+bash cosmos-predict2/libero/start.sh --instance-type g6e.12xlarge --wandb-key <your-key>
+
+# Run the full pipeline unattended: train → convert checkpoint → evaluate
+# (assumes data prep steps have already been completed)
+bash cosmos-predict2/libero/start.sh --instance-type g6e.12xlarge --fullrun
+bash cosmos-predict2/libero/start.sh --instance-type g6e.12xlarge --fullrun --wandb-key <your-key>
 
 # Override the auto-shutdown timer (default 12h)
 SHUTDOWN_AFTER=21600 bash cosmos-predict2/libero/start.sh   # 6h
