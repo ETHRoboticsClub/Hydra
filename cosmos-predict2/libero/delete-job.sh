@@ -4,4 +4,5 @@ set -euo pipefail
 NAMESPACE="robot-learning"
 
 kubectl -n "${NAMESPACE}" delete trainjob cosmos-libero-interactive --ignore-not-found
+kubectl -n "${NAMESPACE}" delete job cosmos-libero-run --ignore-not-found
 kubectl -n "${NAMESPACE}" delete configmap cosmos-libero-files --ignore-not-found

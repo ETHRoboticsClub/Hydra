@@ -16,12 +16,17 @@ bash cosmos-predict2/libero/start.sh --instance-type p5.4xlarge    # 1× H100, 1
 bash cosmos-predict2/libero/start.sh --wandb-key <your-key>
 bash cosmos-predict2/libero/start.sh --instance-type g6e.12xlarge --wandb-key <your-key>
 
-# Run the full pipeline unattended: train → convert checkpoint → evaluate
-# (assumes data prep steps have already been completed)
+# Smoke test: 50-iter training run → evaluate (quick sanity check, ~$2-5)
+# Runs unattended, pod shuts down automatically when done
+bash cosmos-predict2/libero/start.sh --instance-type g6e.12xlarge --smoketest
+bash cosmos-predict2/libero/start.sh --instance-type g6e.12xlarge --smoketest --wandb-key <your-key>
+
+# Full run unattended: train 7000 iters → evaluate (~$120-250)
+# Assumes data prep steps have already been completed
 bash cosmos-predict2/libero/start.sh --instance-type g6e.12xlarge --fullrun
 bash cosmos-predict2/libero/start.sh --instance-type g6e.12xlarge --fullrun --wandb-key <your-key>
 
-# Override the auto-shutdown timer (default 12h)
+# Override the auto-shutdown timer for interactive mode (default 12h)
 SHUTDOWN_AFTER=21600 bash cosmos-predict2/libero/start.sh   # 6h
 SHUTDOWN_AFTER=0     bash cosmos-predict2/libero/start.sh   # no timeout
 ```
@@ -32,35 +37,14 @@ First run takes **5–15 minutes** — Karpenter needs to provision the EC2 node
 
 `main.sh` executes inside the container at pod startup:
 
-1. Installs `uv` to `/data/.uv-bin/` (skipped on restart if already there)
-2. Installs `tmux`
-3. Clones `ETHRoboticsClub/cosmos-predict2` (branch `libero`) to `/data/cosmos-predict2`
-4. Prints the step-by-step guide
-5. Sleeps until the timeout (keeps the pod alive)
+1. Installs `tmux` and `ffmpeg` if not already present
+2. Installs `uv` to `/data/.uv-bin/` (skipped on restart if already there)
+3. Clones `ETHRoboticsClub/cosmos-predict2` (branch `libero`) to `/data/cosmos-predict2`, or pulls latest if already cloned
+4. Runs `uv sync --extra cu126` and activates the venv
+5. **Smoketest/fullrun mode**: runs the pipeline then exits → pod terminates → node is shut down automatically
+6. **Interactive mode**: prints the quick-start guide and sleeps until timeout (keeps the pod alive)
 
-By the time you get the shell, `uv` and the repo are already there.
-
-## Disconnect without killing anything
-
-You land in a `tmux` session. `tmux` keeps everything running inside the pod even if your laptop closes.
-
-```
-Ctrl+B  D      detach — leaves the session running, drops you back to your laptop
-```
-
-Run `start.sh` again to reattach. Your commands are still running.
-
-## tmux basics inside the shell
-
-```
-Ctrl+B  C      open a new window
-Ctrl+B  0      switch to window 0
-Ctrl+B  1      switch to window 1
-Ctrl+B  D      detach (go back to laptop)
-Ctrl+B  [      scroll mode (use arrow keys, Q to exit)
-```
-
-Typical use: one window for training, one for `watch nvidia-smi`.
+By the time you get the shell, `uv`, the repo, and the venv are already there.
 
 ## Monitor the machine
 
@@ -71,73 +55,90 @@ htop                          # CPU and RAM
 df -h /data                   # disk usage on the persistent volume
 ```
 
-## Run the LIBERO workflow
+## Follow logs (smoketest / fullrun)
+
+`start.sh` tails logs automatically. If you need to reconnect:
+
+```bash
+POD=$(kubectl -n robot-learning get pods -l app=cosmos-libero-run -o jsonpath='{.items[-1].metadata.name}')
+kubectl -n robot-learning logs -f ${POD}
+```
+
+Or use k9s → navigate to the pod → press `L`.
+
+## Run the LIBERO workflow (interactive)
 
 All steps run inside the pod shell. Steps are safe to re-run — downloads resume, conversions skip if output already exists.
 
 ```bash
 cd /data/cosmos-predict2
 
-# 1. Install Python deps
-uv sync --extra cu126
-source .venv/bin/activate
-
-# 2. Authenticate with Hugging Face (interactive, paste your token)
+# 1. HF auth (paste token when prompted, or set HF_TOKEN first)
 hf auth login
 
-# 3. Download the Cosmos-Predict2-2B model
+# 2. Download the Cosmos-Predict2-2B model
 python scripts/download_checkpoints.py \
   --model_types video2world --model_sizes 2B --resolution 480 --fps 10
 
-# 4. Download the LIBERO dataset (~27 GB, safe to re-run if interrupted)
+# 3. Download the LIBERO dataset (~27 GB, safe to re-run if interrupted)
 huggingface-cli download nvidia/LIBERO-Cosmos-Policy \
   --repo-type dataset --include "all_episodes/*" \
   --local-dir datasets/libero_cosmos
 
-# 5. Convert HDF5 → MP4 + captions, split train/val
+# 4. Convert HDF5 → MP4 + captions, split train/val
 uv run --with h5py --with pillow --with tqdm \
   python scripts/prepare_libero_cosmos_dataset.py \
   --src datasets/libero_cosmos/all_episodes \
   --out datasets/libero_cosmos_mp4 \
   --fps 10
 
-# 6. Generate T5 embeddings (run for both splits)
+# 5. Generate T5 embeddings (run for both splits)
 python -m scripts.get_t5_embeddings --dataset_path datasets/libero_cosmos_mp4/train
 python -m scripts.get_t5_embeddings --dataset_path datasets/libero_cosmos_mp4/val
 
-# 7. Smoke test — validates the setup in ~5 minutes (1 GPU)
-IMAGINAIRE_OUTPUT_ROOT=outputs torchrun \
-  --nproc_per_node=1 \
-  --master_port=12341 \
+# 6. Quick sanity check (4 GPUs, 50 iters)
+IMAGINAIRE_OUTPUT_ROOT=outputs uv run torchrun \
+  --nproc_per_node=4 --master_port=12341 \
   -m scripts.train \
   --config=cosmos_predict2/configs/base/config.py -- \
   experiment=predict2_video2world_training_2b_libero_cosmos \
-  trainer.max_iter=5 \
-  trainer.validation_iter=1 \
-  trainer.max_val_iter=2 \
-  checkpoint.save_iter=999999
+  model_parallel.context_parallel_size=2 \
+  dataloader_train.batch_size=4 \
+  trainer.max_iter=50 trainer.validation_iter=5 \
+  trainer.max_val_iter=2 checkpoint.save_iter=50
 
-# 8. Full training (change nproc_per_node to match your GPU count)
-IMAGINAIRE_OUTPUT_ROOT=/data/checkpoints torchrun \
-  --nproc_per_node=1 \
-  --master_port=12341 \
+# 7. Full training (use --fullrun flag instead for unattended + auto-shutdown)
+IMAGINAIRE_OUTPUT_ROOT=outputs uv run torchrun \
+  --nproc_per_node=4 --master_port=12341 \
   -m scripts.train \
   --config=cosmos_predict2/configs/base/config.py -- \
-  experiment=predict2_video2world_training_2b_libero_cosmos
+  experiment=predict2_video2world_training_2b_libero_cosmos \
+  model_parallel.context_parallel_size=2 \
+  dataloader_train.batch_size=4 \
+  dataloader_val.batch_size=2 \
+  trainer.max_iter=7000 \
+  trainer.grad_accum_iter=16 \
+  trainer.validation_iter=50 \
+  trainer.max_val_iter=10 \
+  trainer.callbacks.draw_sample.every_n=100 \
+  trainer.callbacks.draw_sample.is_sample=True \
+  trainer.callbacks.draw_sample.show_all_frames=True \
+  trainer.callbacks.draw_sample.guidance='[7.0]' \
+  checkpoint.save_iter=500
 ```
 
-Checkpoints are saved to `/data/checkpoints/` every 500 steps.
+Checkpoints are saved to `outputs/posttraining/video2world_lora/2b_libero_cosmos/checkpoints/` every 500 steps.
 
 ## Copy files from the pod to your laptop
 
 Run these from your laptop (not inside the pod).
 
 ```bash
-# Get the pod name
+# Get the pod name (interactive pod)
 POD=$(kubectl -n robot-learning get pods | grep cosmos-libero-interactive | awk '{print $1}')
 
 # Copy checkpoints to your laptop
-kubectl -n robot-learning cp ${POD}:/data/checkpoints ./local-checkpoints
+kubectl -n robot-learning cp ${POD}:/data/cosmos-predict2/outputs/posttraining ./local-checkpoints
 
 # Copy a specific file
 kubectl -n robot-learning cp ${POD}:/data/cosmos-predict2/outputs/some-file.mp4 ./some-file.mp4
@@ -170,9 +171,11 @@ kubectl -n robot-learning delete pvc cosmos-libero
 
 The PVC must be deleted manually — deleting the job alone does not delete the volume.
 
-## Auto-shutdown
+## Auto-shutdown (interactive mode)
 
 **Default: 12 hours.** The pod shuts itself down after 12h, the EC2 instance is terminated, and you stop paying for compute. The PVC is not deleted — your data is safe.
+
+Smoketest and fullrun pods shut down automatically when the pipeline completes, regardless of this setting.
 
 ```bash
 # Default (12h)
@@ -190,11 +193,17 @@ SHUTDOWN_AFTER=0 bash cosmos-predict2/libero/start.sh
 
 ```
 /data/
-  cosmos-predict2/          repo clone (branch: libero)
-  datasets/
-    libero_cosmos/           raw HDF5 dataset (~27 GB)
-    libero_cosmos_mp4/       converted MP4 + T5 embeddings
-  checkpoints/               training outputs (saved every 500 steps)
-  .uv-bin/                   uv binary
-  .venv/                     Python virtualenv
+  cosmos-predict2/
+    .venv/                              Python virtualenv
+    outputs/
+      posttraining/video2world_lora/
+        2b_libero_cosmos/
+          checkpoints/                  training checkpoints (every 500 steps)
+    datasets/
+      libero_cosmos/                    raw HDF5 dataset (~27 GB)
+      libero_cosmos_mp4/                converted MP4 + T5 embeddings
+    eval/
+      base/                             baseline evaluation results
+      finetuned/                        finetuned model evaluation results
+  .uv-bin/                              uv binary
 ```

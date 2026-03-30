@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="robot-learning"
 TRAINJOB_NAME="cosmos-libero-interactive"
+JOB_NAME="cosmos-libero-run"
 CONFIGMAP_NAME="cosmos-libero-files"
 
 cd "${SCRIPT_DIR}"
@@ -18,12 +19,14 @@ INSTANCE_TYPE=""
 NODEPOOL=""
 WANDB_KEY=""
 FULLRUN=false
+SMOKETEST=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --instance-type) INSTANCE_TYPE="$2"; shift 2 ;;
     --nodepool)      NODEPOOL="$2";       shift 2 ;;
     --wandb-key)     WANDB_KEY="$2";      shift 2 ;;
     --fullrun)       FULLRUN=true;        shift   ;;
+    --smoketest)     SMOKETEST=true;      shift   ;;
     *) echo "Unknown argument: $1"; exit 1 ;;
   esac
 done
@@ -47,39 +50,62 @@ case "${INSTANCE_TYPE}" in
   p5.4xlarge)   GPU_COUNT=1; CPU="14"; MEM="160Gi" ;;
 esac
 
-pod_name() {
-  kubectl -n "${NAMESPACE}" get pods \
-    --sort-by=.metadata.creationTimestamp \
-    -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
-    | grep '^cosmos-libero-interactive' \
-    | tail -n 1
-}
+IS_RUN=false
+( [ "${FULLRUN}" = "true" ] || [ "${SMOKETEST}" = "true" ] ) && IS_RUN=true
 
-if ! kubectl -n "${NAMESPACE}" get trainjob "${TRAINJOB_NAME}" >/dev/null 2>&1; then
-  kubectl -n "${NAMESPACE}" create configmap "${CONFIGMAP_NAME}" \
-    --from-file=main.sh \
-    --dry-run=client -o yaml \
-    | kubectl apply -f -
-
-  kubectl apply -f volumeclaims.yaml
-
-  TRAINJOB_MANIFEST="$(cat trainjob.yaml)"
+patch_manifest() {
+  local manifest="$1"
   if [ -n "${INSTANCE_TYPE}" ]; then
-    echo "Using instance type: ${INSTANCE_TYPE} (nodepool: ${NODEPOOL}, GPUs: ${GPU_COUNT}, CPU: ${CPU}, RAM: ${MEM})"
-    TRAINJOB_MANIFEST="$(echo "${TRAINJOB_MANIFEST}" | \
+    manifest="$(echo "${manifest}" | \
       sed "s/karpenter.sh\/nodepool: gpus/karpenter.sh\/nodepool: ${NODEPOOL}/" | \
-      sed "s/node-tier: gpus/node-tier: ${NODEPOOL}\n          node.kubernetes.io\/instance-type: ${INSTANCE_TYPE}/" | \
+      sed "s/\([ ]*\)node-tier: gpus/\1node-tier: ${NODEPOOL}\n\1node.kubernetes.io\/instance-type: ${INSTANCE_TYPE}/" | \
       sed "s/nvidia\.com\/gpu: \"[0-9]*\"/nvidia.com\/gpu: \"${GPU_COUNT}\"/g" | \
       sed "s/cpu: \"[^\"]*\"/cpu: \"${CPU}\"/g" | \
       sed "s/memory: \"[^\"]*\"/memory: \"${MEM}\"/g")"
   fi
-  # Inject env vars into the pod command
-  ENV_INJECT="export NPROC=${GPU_COUNT}"
-  [ "${FULLRUN}" = "true" ] && ENV_INJECT="${ENV_INJECT}; export FULLRUN=1"
-  [ -n "${WANDB_KEY}" ]     && ENV_INJECT="${ENV_INJECT}; export WANDB_API_KEY=${WANDB_KEY}"
-  TRAINJOB_MANIFEST="$(echo "${TRAINJOB_MANIFEST}" | \
-    sed "s|true  # env-inject-placeholder|${ENV_INJECT}|")"
-  echo "${TRAINJOB_MANIFEST}" | kubectl apply -f -
+  local env_inject="export NPROC=${GPU_COUNT}"
+  [ "${FULLRUN}"   = "true" ] && env_inject="${env_inject}; export FULLRUN=1"
+  [ "${SMOKETEST}" = "true" ] && env_inject="${env_inject}; export SMOKETEST=1"
+  [ -n "${WANDB_KEY}" ]       && env_inject="${env_inject}; export WANDB_API_KEY=${WANDB_KEY}"
+  echo "${manifest}" | sed "s|true  # env-inject-placeholder|${env_inject}|"
+}
+
+pod_name() {
+  if [ "${IS_RUN}" = "true" ]; then
+    kubectl -n "${NAMESPACE}" get pods -l app=cosmos-libero-run \
+      --sort-by=.metadata.creationTimestamp \
+      -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
+      | tail -n 1
+  else
+    kubectl -n "${NAMESPACE}" get pods \
+      --sort-by=.metadata.creationTimestamp \
+      -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
+      | grep '^cosmos-libero-interactive' \
+      | tail -n 1
+  fi
+}
+
+# Create the workload if it doesn't exist yet
+if [ "${IS_RUN}" = "true" ]; then
+  if ! kubectl -n "${NAMESPACE}" get job "${JOB_NAME}" >/dev/null 2>&1; then
+    echo "Using instance type: ${INSTANCE_TYPE} (nodepool: ${NODEPOOL}, GPUs: ${GPU_COUNT}, CPU: ${CPU}, RAM: ${MEM})"
+    kubectl -n "${NAMESPACE}" create configmap "${CONFIGMAP_NAME}" \
+      --from-file=main.sh \
+      --dry-run=client -o yaml \
+      | kubectl apply -f -
+    kubectl apply -f volumeclaims.yaml
+    patch_manifest "$(cat job-fullrun.yaml)" | kubectl apply -f -
+  fi
+else
+  if ! kubectl -n "${NAMESPACE}" get trainjob "${TRAINJOB_NAME}" >/dev/null 2>&1; then
+    echo "Using instance type: ${INSTANCE_TYPE} (nodepool: ${NODEPOOL}, GPUs: ${GPU_COUNT}, CPU: ${CPU}, RAM: ${MEM})"
+    kubectl -n "${NAMESPACE}" create configmap "${CONFIGMAP_NAME}" \
+      --from-file=main.sh \
+      --dry-run=client -o yaml \
+      | kubectl apply -f -
+    kubectl apply -f volumeclaims.yaml
+    patch_manifest "$(cat trainjob.yaml)" | kubectl apply -f -
+  fi
 fi
 
 for _ in $(seq 1 60); do
@@ -97,8 +123,8 @@ fi
 
 kubectl -n "${NAMESPACE}" wait --for=condition=Ready "pod/${POD_NAME}" --timeout=15m
 
-if [ "${FULLRUN}" = "true" ]; then
-  echo "Full run started. Logs (also visible in k9s):"
+if [ "${IS_RUN}" = "true" ]; then
+  echo "Run started. Logs (also visible in k9s):"
   echo "  kubectl -n ${NAMESPACE} logs -f ${POD_NAME}"
   kubectl -n "${NAMESPACE}" logs -f "${POD_NAME}"
 else

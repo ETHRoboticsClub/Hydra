@@ -41,25 +41,68 @@ cd "${REPO_DIR}"
 uv sync --extra cu126
 source .venv/bin/activate
 
-if [ "${FULLRUN:-}" = "1" ]; then
-  echo "[cosmos-libero] Starting full training run (${NPROC:-1} GPU(s))..."
+if [ "${SMOKETEST:-}" = "1" ]; then
+  rm -f outputs/posttraining/video2world_lora/2b_libero_cosmos/checkpoints/latest_checkpoint.txt
+  echo "[cosmos-libero] Starting smoke test (50 iters, ${NPROC:-1} GPU(s))..."
 
-  IMAGINAIRE_OUTPUT_ROOT=outputs torchrun \
+  IMAGINAIRE_OUTPUT_ROOT=outputs uv run torchrun \
     --nproc_per_node="${NPROC:-1}" \
     --master_port=12341 \
     -m scripts.train \
     --config=cosmos_predict2/configs/base/config.py -- \
-    experiment=predict2_video2world_training_2b_libero_cosmos
+    experiment=predict2_video2world_training_2b_libero_cosmos \
+    model_parallel.context_parallel_size=2 \
+    dataloader_train.batch_size=4 \
+    dataloader_val.batch_size=1 \
+    trainer.max_iter=50 \
+    trainer.validation_iter=5 \
+    trainer.max_val_iter=2 \
+    trainer.callbacks.draw_sample.every_n=25 \
+    trainer.callbacks.draw_sample.is_sample=True \
+    trainer.callbacks.draw_sample.show_all_frames=True \
+    trainer.callbacks.draw_sample.guidance='[7.0]' \
+    checkpoint.save_iter=50
 
-  echo "[cosmos-libero] Converting checkpoint..."
   CKPT_DIR=outputs/posttraining/video2world_lora/2b_libero_cosmos/checkpoints
   ITER=$(cat "${CKPT_DIR}/latest_checkpoint.txt")
-  python convert_distcp.py "${CKPT_DIR}/${ITER}/model" "${CKPT_DIR}/${ITER}"
+
+  echo "[cosmos-libero] Smoke test: running evaluation..."
+  uv run python scripts/eval_libero_cosmos.py --out eval/base
+  uv run python scripts/eval_libero_cosmos.py --out eval/finetuned \
+    --lora-checkpoint "${CKPT_DIR}/model/${ITER}"
+  echo "[cosmos-libero] Smoke test complete. Shutting down."
+  exit 0
+fi
+
+if [ "${FULLRUN:-}" = "1" ]; then
+  rm -f outputs/posttraining/video2world_lora/2b_libero_cosmos/checkpoints/latest_checkpoint.txt
+  echo "[cosmos-libero] Starting full training run (${NPROC:-1} GPU(s))..."
+
+  IMAGINAIRE_OUTPUT_ROOT=outputs uv run torchrun \
+    --nproc_per_node="${NPROC:-1}" \
+    --master_port=12341 \
+    -m scripts.train \
+    --config=cosmos_predict2/configs/base/config.py -- \
+    experiment=predict2_video2world_training_2b_libero_cosmos \
+    model_parallel.context_parallel_size=2 \
+    dataloader_train.batch_size=4 \
+    dataloader_val.batch_size=2 \
+    trainer.max_iter=7000 \
+    trainer.grad_accum_iter=16 \
+    trainer.validation_iter=50 \
+    trainer.max_val_iter=10 \
+    trainer.callbacks.draw_sample.every_n=100 \
+    trainer.callbacks.draw_sample.is_sample=True \
+    trainer.callbacks.draw_sample.show_all_frames=True \
+    trainer.callbacks.draw_sample.guidance='[7.0]' \
+    checkpoint.save_iter=500
 
   echo "[cosmos-libero] Running evaluation..."
-  python scripts/eval_libero_cosmos.py --out eval/base
-  python scripts/eval_libero_cosmos.py --out eval/finetuned \
-    --lora-checkpoint "${CKPT_DIR}/${ITER}/model_ema_bf16.pt"
+  CKPT_DIR=outputs/posttraining/video2world_lora/2b_libero_cosmos/checkpoints
+  ITER=$(cat "${CKPT_DIR}/latest_checkpoint.txt")
+  uv run python scripts/eval_libero_cosmos.py --out eval/base
+  uv run python scripts/eval_libero_cosmos.py --out eval/finetuned \
+    --lora-checkpoint "${CKPT_DIR}/model/${ITER}"
 
   echo "[cosmos-libero] Full run complete. Shutting down."
   exit 0
