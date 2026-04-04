@@ -5,6 +5,7 @@ set -euo pipefail
 DATASET_REPO_ID="ETHRC/towelspring26-cleaned"
 DATASET_REVISION="${DATASET_REVISION:-trimmed}"
 CHECKPOINT_DIR="/checkpoints/act"
+UPLOAD_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/../.. && pwd)/upload-checkpoint-to-s3-worker.sh"
 
 # Cache uv packages and venv on persistent storage
 export UV_CACHE_DIR="/data/.uv-cache"
@@ -12,6 +13,17 @@ export VIRTUAL_ENV="/data/.venv"
 export PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 nvidia-smi
+
+upload_checkpoint_if_configured() {
+  if [ -z "${S3_CHECKPOINT_DIR:-}" ]; then
+    echo "[entrypoint.sh] S3_CHECKPOINT_DIR is not set. Skipping checkpoint upload."
+    return 0
+  fi
+
+  local checkpoint_name="${S3_CHECKPOINT_NAME:-last}"
+  echo "[entrypoint.sh] Uploading checkpoint ${checkpoint_name} to s3://ethrc-ml-data-916780037007/${S3_CHECKPOINT_DIR}"
+  CHECKPOINT_ROOT="${CHECKPOINT_DIR}" "${UPLOAD_SCRIPT}" "${checkpoint_name}" "${S3_CHECKPOINT_DIR}"
+}
 
 # ── 1. Sync dependencies ──────────────────────────────────────────────────────
 echo "[entrypoint.sh] Syncing uv environment..."
@@ -30,6 +42,7 @@ rm -rf /checkpoints/act
 # bootstrap log so diagnostics do not trip the completion guard.
 if [ -d "${CHECKPOINT_DIR}" ] && [ -n "$(find "${CHECKPOINT_DIR}" -mindepth 1 ! -name 'bootstrap.log' -print -quit 2>/dev/null)" ]; then
   echo "[entrypoint.sh] Checkpoints found at ${CHECKPOINT_DIR} — training already complete. Exiting."
+  upload_checkpoint_if_configured
   exit 0
 fi
 
@@ -85,3 +98,5 @@ uv run --active --no-sync lerobot-train \
   --wandb.project=act \
   --wandb.enable=true \
   --policy.device=cuda
+
+upload_checkpoint_if_configured

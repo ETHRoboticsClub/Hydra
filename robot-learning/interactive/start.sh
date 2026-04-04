@@ -40,4 +40,4 @@ if [ -z "${POD_NAME:-}" ]; then
 fi
 
 kubectl -n "${NAMESPACE}" wait --for=condition=Ready "pod/${POD_NAME}" --timeout=15m
-kubectl -n "${NAMESPACE}" exec -it "${POD_NAME}" -- bash -lc 'mkdir -p /tmp/workspace && cd /tmp/workspace && exec bash'
+kubectl -n "${NAMESPACE}" exec -it "${POD_NAME}" -- sudo bash -lc 'mkdir -p /tmp/workspace && cd /tmp/workspace && exec bash'

@@ -15,6 +15,9 @@ spec:
   mountOptions:
     - region us-east-1
     - prefix robot-learning/
+    - allow-other
+    - uid=1001
+    - gid=1001
     - allow-delete
   csi:
     driver: s3.csi.aws.com
