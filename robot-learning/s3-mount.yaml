@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: robot-learning-s3-data
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: robot-learning
+    name: s3-data
+  mountOptions:
+    - region us-east-1
+    - prefix robot-learning/
+    - allow-delete
+  csi:
+    driver: s3.csi.aws.com
+    volumeHandle: ethrc-ml-data-916780037007-robot-learning
+    volumeAttributes:
+      bucketName: ethrc-ml-data-916780037007
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: s3-data
+  namespace: robot-learning
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 1Gi
+  volumeName: robot-learning-s3-data
