@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 NAMESPACE="${NAMESPACE:-robot-learning}"
 SERVICE_ACCOUNT_NAME="${SERVICE_ACCOUNT_NAME:-training-sa}"
-UPLOAD_IMAGE="${UPLOAD_IMAGE:-public.ecr.aws/aws-cli/aws-cli:2}"
+UPLOAD_IMAGE="${UPLOAD_IMAGE:-916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-d866de5}"
 CHECKPOINT_PVC_NAME="${CHECKPOINT_PVC_NAME:-act-checkpoints}"
 UPLOAD_REQUEST_CPU="${UPLOAD_REQUEST_CPU:-250m}"
 UPLOAD_REQUEST_MEMORY="${UPLOAD_REQUEST_MEMORY:-512Mi}"
@@ -135,6 +135,7 @@ ${node_name_block}
   containers:
     - name: uploader
       image: ${UPLOAD_IMAGE}
+      terminationMessagePolicy: FallbackToLogsOnError
       resources:
         requests:
           cpu: ${UPLOAD_REQUEST_CPU}
@@ -253,7 +254,17 @@ report_result() {
 
   local exit_code=""
   exit_code="$(kubectl -n "${NAMESPACE}" get pod "${pod_name}" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null || true)"
+  local reason=""
+  reason="$(kubectl -n "${NAMESPACE}" get pod "${pod_name}" -o jsonpath='{.status.containerStatuses[0].state.terminated.reason}' 2>/dev/null || true)"
+  local message=""
+  message="$(kubectl -n "${NAMESPACE}" get pod "${pod_name}" -o jsonpath='{.status.containerStatuses[0].state.terminated.message}' 2>/dev/null || true)"
   log "Pod ${pod_name} failed. Phase=${phase}${exit_code:+, exitCode=${exit_code}}"
+  if [ -n "${reason}" ]; then
+    log "Termination reason: ${reason}"
+  fi
+  if [ -n "${message}" ]; then
+    log "Termination message: ${message}"
+  fi
   kubectl -n "${NAMESPACE}" describe pod "${pod_name}" >&2 || true
   return 1
 }
