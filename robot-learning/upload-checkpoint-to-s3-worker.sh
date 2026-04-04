@@ -6,6 +6,7 @@ S3_BUCKET_URI="s3://ethrc-ml-data-916780037007"
 CHECKPOINT_NAME="${1:-}"
 S3_TARGET_DIR="${2:-}"
 AWS_REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-}}"
+EXIT_DELAY_SECONDS="${EXIT_DELAY_SECONDS:-120}"
 
 usage() {
   cat >&2 <<'EOF'
@@ -22,6 +23,16 @@ die() {
   log "$*"
   exit 1
 }
+
+on_exit() {
+  status=$?
+  trap - EXIT
+  log "Sleeping ${EXIT_DELAY_SECONDS}s before exit."
+  sleep "${EXIT_DELAY_SECONDS}"
+  exit "${status}"
+}
+
+trap on_exit EXIT
 
 require_args() {
   if [ -z "${CHECKPOINT_NAME}" ] || [ -z "${S3_TARGET_DIR}" ]; then
