@@ -18,6 +18,4 @@ cat <<EOF
 [interactive] GPU pod will stay alive until the TrainJob is deleted.
 EOF
 
-nvidia-smi
-
 exec sleep infinity
