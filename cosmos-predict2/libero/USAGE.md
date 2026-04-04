@@ -73,6 +73,16 @@ All steps run inside the pod shell. Steps are safe to re-run — downloads resum
 ```bash
 cd /data/cosmos-predict2
 
+# 1–5. Download everything from S3 (checkpoints + fully prepared dataset, including conversions)
+aws s3 sync s3://ethrc-ml-data-916780037007/cosmos-predict2-libero/checkpoints /data/cosmos-predict2/checkpoints
+aws s3 sync s3://ethrc-ml-data-916780037007/cosmos-predict2-libero/datasets /data/cosmos-predict2/datasets
+```
+
+Alternatively, prepare from scratch (steps 1–5):
+
+```bash
+cd /data/cosmos-predict2
+
 # 1. HF auth (paste token when prompted, or set HF_TOKEN first)
 hf auth login
 
