@@ -23,7 +23,7 @@ fi
 uv sync --active --no-install-project --no-dev
 
 # TODO: REMOVE
-rm -rf /checkpoints/act
+# rm -rf /checkpoints/act
 
 # ── 2. Checkpoint guard ───────────────────────────────────────────────────────
 # If checkpoint artifacts already exist, there is nothing to do. Ignore the
