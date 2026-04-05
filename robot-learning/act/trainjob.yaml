@@ -13,7 +13,7 @@ spec:
       - -c
       - >-
         set -euxo pipefail
-        && HYDRA_GIT_BRANCH=main
+        && HYDRA_GIT_BRANCH=master
         && DATASET_REVISION=trimmed
         && sudo mkdir -p /checkpoints/act
         && sudo chown -R "$(id -u):$(id -g)" /data /checkpoints
