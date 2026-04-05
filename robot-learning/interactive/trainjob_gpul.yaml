@@ -20,19 +20,19 @@ spec:
       requests:
         cpu: "1"
         memory: "4Gi"
-        nvidia.com/gpu: "1"
+        nvidia.com/gpu: "4"
       limits:
         cpu: "8"
         memory: "16Gi"
-        nvidia.com/gpu: "1"
+        nvidia.com/gpu: "4"
   podTemplateOverrides:
     - targetJobs:
         - name: node
       spec:
         serviceAccountName: training-sa
         nodeSelector:
-          karpenter.sh/nodepool: gpus
-          node-tier: gpus
+          karpenter.sh/nodepool: gpul
+          node-tier: gpul
         tolerations:
           - key: nvidia.com/gpu
             operator: Exists

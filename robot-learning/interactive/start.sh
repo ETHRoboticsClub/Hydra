@@ -5,8 +5,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="robot-learning"
 TRAINJOB_NAME="interactive-gpu"
 CONFIGMAP_NAME="interactive-gpu-files"
+TRAINJOB_MANIFEST="${1:-trainjob.yaml}"
 
 cd "${SCRIPT_DIR}"
+
+if [[ "${TRAINJOB_MANIFEST}" != /* ]]; then
+  TRAINJOB_MANIFEST="${SCRIPT_DIR}/${TRAINJOB_MANIFEST}"
+fi
+
+if [[ ! -f "${TRAINJOB_MANIFEST}" ]]; then
+  echo "TrainJob manifest not found: ${TRAINJOB_MANIFEST}" >&2
+  echo "Usage: $0 [trainjob.yaml]" >&2
+  exit 1
+fi
 
 pod_name() {
   kubectl -n "${NAMESPACE}" get pods \
@@ -23,7 +34,7 @@ if ! kubectl -n "${NAMESPACE}" get trainjob "${TRAINJOB_NAME}" >/dev/null 2>&1; 
     -o yaml \
     | kubectl apply -f -
 
-  kubectl apply -f trainjob.yaml
+  kubectl apply -f "${TRAINJOB_MANIFEST}"
 fi
 
 for _ in $(seq 1 60); do
