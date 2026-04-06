@@ -5,7 +5,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="robot-learning"
 TRAINJOB_NAME="interactive-gpu"
 CONFIGMAP_NAME="interactive-gpu-files"
-TRAINJOB_MANIFEST="${1:-trainjob.yaml}"
+CONFIG_INPUT="${1:-}"
+
+if [[ -z "${CONFIG_INPUT}" ]]; then
+  echo "Config name is required." >&2
+  echo "Usage: $0 <config-name|config-name.yaml|path/to/config.yaml>" >&2
+  exit 1
+fi
+
+if [[ "${CONFIG_INPUT}" != *.yaml ]]; then
+  CONFIG_INPUT="${CONFIG_INPUT}.yaml"
+fi
+
+if [[ "${CONFIG_INPUT}" == /* || "${CONFIG_INPUT}" == */* ]]; then
+  TRAINJOB_MANIFEST="${CONFIG_INPUT}"
+else
+  TRAINJOB_MANIFEST="${SCRIPT_DIR}/configs/${CONFIG_INPUT}"
+fi
 
 cd "${SCRIPT_DIR}"
 
@@ -15,7 +31,7 @@ fi
 
 if [[ ! -f "${TRAINJOB_MANIFEST}" ]]; then
   echo "TrainJob manifest not found: ${TRAINJOB_MANIFEST}" >&2
-  echo "Usage: $0 [trainjob.yaml]" >&2
+  echo "Usage: $0 <config-name|config-name.yaml|path/to/config.yaml>" >&2
   exit 1
 fi
 
