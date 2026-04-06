@@ -32,11 +32,11 @@ spec:
     resourcesPerNode:
       requests:
         cpu: "1"
-        memory: "64Gi"
+        memory: "320Gi"
         nvidia.com/gpu: "4"
       limits:
         cpu: "8"
-        memory: "64Gi"
+        memory: "384Gi"
         nvidia.com/gpu: "4"
   podTemplateOverrides:
     - targetJobs:
