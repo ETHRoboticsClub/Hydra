@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # User-facing configuration
-DATASET_REPO_ID="ETHRC/towelspring26-cleaned"
+DATASET_REPO_ID="ETHRC/towelspring26_realsense"
 DATASET_REVISION="${DATASET_REVISION:-trimmed}"
-CHECKPOINT_DIR="/checkpoints/act"
+CHECKPOINT_DIR="/checkpoints/act_realsense"
 
 # Cache uv packages and venv on persistent storage
 export UV_CACHE_DIR="/data/.uv-cache"

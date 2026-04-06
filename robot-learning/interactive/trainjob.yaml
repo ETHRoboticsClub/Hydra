@@ -8,6 +8,17 @@ spec:
     name: torch-distributed
   trainer:
     image: 916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-d866de5
+    env:
+      - name: WANDB_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: wandb-secret
+            key: WANDB_API_KEY
+      - name: HF_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: hf-secret
+            key: HF_TOKEN
     command:
       - /bin/bash
       - -lc

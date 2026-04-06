@@ -9,8 +9,6 @@ spec:
   trainer:
     image: 916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-d866de5
     env:
-      - name: NVIDIA_VISIBLE_DEVICES
-        value: all
       - name: WANDB_API_KEY
         valueFrom:
           secretKeyRef:
@@ -32,20 +30,20 @@ spec:
     resourcesPerNode:
       requests:
         cpu: "1"
-        memory: "64Gi"
-        nvidia.com/gpu: "8"
+        memory: "4Gi"
+        nvidia.com/gpu: "1"
       limits:
         cpu: "8"
-        memory: "64Gi"
-        nvidia.com/gpu: "8"
+        memory: "16Gi"
+        nvidia.com/gpu: "1"
   podTemplateOverrides:
     - targetJobs:
         - name: node
       spec:
         serviceAccountName: training-sa
         nodeSelector:
-          karpenter.sh/nodepool: gpul
-          node-tier: gpul
+          karpenter.sh/nodepool: a100-40
+          node-tier: a100-40
         tolerations:
           - key: nvidia.com/gpu
             operator: Exists
