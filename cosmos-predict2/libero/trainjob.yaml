@@ -1,0 +1,63 @@
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: TrainJob
+metadata:
+  name: cosmos-libero-interactive
+  namespace: robot-learning
+spec:
+  runtimeRef:
+    name: torch-distributed
+  trainer:
+    # NVIDIA NGC PyTorch — CUDA 12.6, PyTorch 2.5, Python 3.10, Ubuntu 22.04
+    image: nvcr.io/nvidia/pytorch:24.12-py3
+    command:
+      - /bin/bash
+      - -lc
+      - |
+        cp /job-files/main.sh /tmp/main.sh
+        chmod +x /tmp/main.sh
+        true  # env-inject-placeholder
+        exec /tmp/main.sh
+    numNodes: 1
+    resourcesPerNode:
+      requests:
+        cpu: "16"
+        memory: "64Gi"
+        nvidia.com/gpu: "1"
+      limits:
+        cpu: "44"
+        memory: "160Gi"
+        nvidia.com/gpu: "1"
+  podTemplateOverrides:
+    - targetJobs:
+        - name: node
+      spec:
+        serviceAccountName: training-sa
+        nodeSelector:
+          karpenter.sh/nodepool: gpus
+          node-tier: gpus
+        tolerations:
+          - key: nvidia.com/gpu
+            operator: Exists
+            effect: NoSchedule
+        volumes:
+          - name: job-files
+            configMap:
+              name: cosmos-libero-files
+              defaultMode: 0755
+          - name: data
+            persistentVolumeClaim:
+              claimName: cosmos-libero
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 16Gi
+        containers:
+          - name: node
+            volumeMounts:
+              - name: job-files
+                mountPath: /job-files
+                readOnly: true
+              - name: data
+                mountPath: /data
+              - name: dshm
+                mountPath: /dev/shm
