@@ -18,12 +18,12 @@ spec:
     numNodes: 1
     resourcesPerNode:
       requests:
-        cpu: "1"
-        memory: "4Gi"
+        cpu: "16"
+        memory: "64Gi"
         nvidia.com/gpu: "1"
       limits:
-        cpu: "8"
-        memory: "16Gi"
+        cpu: "44"
+        memory: "160Gi"
         nvidia.com/gpu: "1"
   podTemplateOverrides:
     - targetJobs:
@@ -33,6 +33,7 @@ spec:
         nodeSelector:
           karpenter.sh/nodepool: gpum
           node-tier: gpum
+          node.kubernetes.io/instance-type: g6e.xlarge
         tolerations:
           - key: nvidia.com/gpu
             operator: Exists
@@ -41,7 +42,7 @@ spec:
           - name: dshm
             emptyDir:
               medium: Memory
-              sizeLimit: 8Gi
+              sizeLimit: 16Gi
           # Persistent Cosmos weights / HF cache / artifacts (same PVC pattern as interactive-gpu).
           # Create a dedicated PVC and change claimName if you want this job isolated from /checkpoints.
           - name: cosmos-persist
