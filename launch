@@ -18,12 +18,12 @@ usage() {
 Usage:
   ./launch [--dry-run] <profile> <repo> <train_script> <train_config> [git_ref]
 
-  profile     GPU / node profile: gpus | gpul | a100
+  profile     GPU / node profile: gpus | gpul | gpum | a100 | a100-80
   repo        Git URL, git@github.com:org/repo.git, or org/repo (GitHub shorthand)
   train_script Path inside the repo to the training entrypoint (e.g. train/act/train.sh)
   train_config Path inside the repo to the job YAML (for train/act/train.sh this should be
                train/act/configs/job.yaml — dataset + policy). For train/act/train.sh, launch
-               auto-selects a device YAML from profile (gpus/gpul/a100) unless overridden.
+               auto-selects a device YAML from profile (gpus/gpul/gpum/a100/a100-80) unless overridden.
   git_ref     Optional branch or tag (default: main)
 
 Environment overrides:
@@ -117,6 +117,17 @@ profile_apply() {
       MEM_LIMIT="${LAUNCH_MEM_LIMIT:-384Gi}"
       MULTI_GPU_ENV=1
       ;;
+    gpum)
+      NODEPOOL="gpum"
+      NODETIER="gpum"
+      GPU_REQUEST="${LAUNCH_GPU_REQUEST:-1}"
+      GPU_LIMIT="${LAUNCH_GPU_LIMIT:-1}"
+      CPU_REQUEST="${LAUNCH_CPU_REQUEST:-1}"
+      CPU_LIMIT="${LAUNCH_CPU_LIMIT:-8}"
+      MEM_REQUEST="${LAUNCH_MEM_REQUEST:-4Gi}"
+      MEM_LIMIT="${LAUNCH_MEM_LIMIT:-16Gi}"
+      MULTI_GPU_ENV=0
+      ;;
     a100)
       NODEPOOL="a100-40"
       NODETIER="a100-40"
@@ -128,8 +139,19 @@ profile_apply() {
       MEM_LIMIT="${LAUNCH_MEM_LIMIT:-32Gi}"
       MULTI_GPU_ENV=0
       ;;
+    a100-80)
+      NODEPOOL="a100-80"
+      NODETIER="a100-80"
+      GPU_REQUEST="${LAUNCH_GPU_REQUEST:-1}"
+      GPU_LIMIT="${LAUNCH_GPU_LIMIT:-1}"
+      CPU_REQUEST="${LAUNCH_CPU_REQUEST:-1}"
+      CPU_LIMIT="${LAUNCH_CPU_LIMIT:-8}"
+      MEM_REQUEST="${LAUNCH_MEM_REQUEST:-4Gi}"
+      MEM_LIMIT="${LAUNCH_MEM_LIMIT:-64Gi}"
+      MULTI_GPU_ENV=0
+      ;;
     *)
-      die "Unknown profile '${name}'. Use: gpus, gpul, a100"
+      die "Unknown profile '${name}'. Use: gpus, gpul, gpum, a100, a100-80"
       ;;
   esac
 }
@@ -140,7 +162,9 @@ Profiles (node selectors match robot-learning/interactive/configs/*.yaml):
 
   gpus   karpenter nodepool gpus   — 1× GPU, 4–16Gi RAM defaults
   gpul   karpenter nodepool gpul   — 4× GPU, 320–384Gi RAM (L40S-class nodes)
+  gpum   karpenter nodepool gpum   — 1× GPU, 4–16Gi RAM defaults
   a100   karpenter nodepool a100-40 — 1× A100 40GB, 4–32Gi RAM defaults
+  a100-80 karpenter nodepool a100-80 — 1× A100 80GB, 4–64Gi RAM defaults
 
 Override RAM/GPU if scheduling fails, e.g.:
   LAUNCH_MEM_REQUEST=256Gi LAUNCH_MEM_LIMIT=320Gi ./launch gpul ...
@@ -162,7 +186,13 @@ default_device_config_for_profile() {
     gpul)
       printf 'train/act/configs/aws_gpul.yaml\n'
       ;;
+    gpum)
+      printf 'train/act/configs/aws_gpus.yaml\n'
+      ;;
     a100)
+      printf 'train/act/configs/aws_a100.yaml\n'
+      ;;
+    a100-80)
       printf 'train/act/configs/aws_a100.yaml\n'
       ;;
     *)
