@@ -22,8 +22,8 @@ Usage:
   repo        Git URL, git@github.com:org/repo.git, or org/repo (GitHub shorthand)
   train_script Path inside the repo to the training entrypoint (e.g. train/act/train.sh)
   train_config Path inside the repo to the job YAML (for train/act/train.sh this should be
-               train/act/configs/job.yaml — dataset + policy). Batch / GPU settings come from a
-               separate device YAML chosen by nvidia-smi unless you override (below).
+               train/act/configs/job.yaml — dataset + policy). For train/act/train.sh, launch
+               auto-selects a device YAML from profile (gpus/gpul/a100) unless overridden.
   git_ref     Optional branch or tag (default: main)
 
 Environment overrides:
@@ -36,7 +36,7 @@ Environment overrides:
                                          (e.g. train/act/configs/aws_gpul.yaml)
   DRY_RUN=1 or --dry-run                 Print manifest only (no kubectl)
 
-Examples (lerobot-edit-scripts ACT — job YAML + auto device file from GPU):
+Examples (lerobot-edit-scripts ACT — job YAML + profile-mapped device file):
   ./launch gpul ETHRoboticsClub/lerobot-edit-scripts \\
     train/act/train.sh train/act/configs/job.yaml
   ./launch a100 ETHRoboticsClub/lerobot-edit-scripts \\
@@ -145,6 +145,30 @@ Profiles (node selectors match robot-learning/interactive/configs/*.yaml):
 Override RAM/GPU if scheduling fails, e.g.:
   LAUNCH_MEM_REQUEST=256Gi LAUNCH_MEM_LIMIT=320Gi ./launch gpul ...
 EOF
+}
+
+default_device_config_for_profile() {
+  local profile="$1"
+  local train_script="$2"
+
+  if [[ "${train_script}" != "train/act/train.sh" ]]; then
+    return 0
+  fi
+
+  case "${profile}" in
+    gpus)
+      printf 'train/act/configs/aws_gpus.yaml\n'
+      ;;
+    gpul)
+      printf 'train/act/configs/aws_gpul.yaml\n'
+      ;;
+    a100)
+      printf 'train/act/configs/aws_a100.yaml\n'
+      ;;
+    *)
+      return 0
+      ;;
+  esac
 }
 
 emit_trainjob_yaml() {
@@ -307,15 +331,19 @@ main() {
   safe_rel_path "${train_script}" "train_script"
   safe_rel_path "${train_config}" "train_config"
 
-  TRAIN_DEVICE_CONFIG_REL="${LAUNCH_DEVICE_CONFIG_REL:-}"
-  if [[ -n "${TRAIN_DEVICE_CONFIG_REL}" ]]; then
-    safe_rel_path "${TRAIN_DEVICE_CONFIG_REL}" "LAUNCH_DEVICE_CONFIG_REL"
-  fi
-
   local train_git_url
   train_git_url="$(resolve_repo_url "${repo}")"
 
   profile_apply "${profile}"
+
+  TRAIN_DEVICE_CONFIG_REL="${LAUNCH_DEVICE_CONFIG_REL:-}"
+  if [[ -z "${TRAIN_DEVICE_CONFIG_REL}" ]]; then
+    TRAIN_DEVICE_CONFIG_REL="$(default_device_config_for_profile "${profile}" "${train_script}" || true)"
+  fi
+  if [[ -n "${TRAIN_DEVICE_CONFIG_REL}" ]]; then
+    safe_rel_path "${TRAIN_DEVICE_CONFIG_REL}" "LAUNCH_DEVICE_CONFIG_REL"
+    log "Device config (DEVICE_CONFIG): ${TRAIN_DEVICE_CONFIG_REL}"
+  fi
 
   local run_id
   run_id="$(date +%Y%m%d-%H%M%S)"
