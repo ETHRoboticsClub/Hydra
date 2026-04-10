@@ -1,0 +1,385 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LAUNCH_D="${SCRIPT_DIR}/launch.d"
+BOOTSTRAP_LOCAL="${LAUNCH_D}/pod-bootstrap.sh"
+
+NAMESPACE="${NAMESPACE:-robot-learning}"
+SERVICE_ACCOUNT_NAME="${SERVICE_ACCOUNT_NAME:-training-sa}"
+IMAGE="${LAUNCH_IMAGE:-916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-d866de5}"
+DATA_PVC="${DATA_PVC:-act-data}"
+CHECKPOINT_PVC="${CHECKPOINT_PVC:-act-checkpoints}"
+GIT_CLONE_DEPTH="${GIT_CLONE_DEPTH:-1}"
+DRY_RUN="${DRY_RUN:-0}"
+
+usage() {
+  cat >&2 <<'EOF'
+Usage:
+  ./launch [--dry-run] <profile> <repo> <train_script> <train_config> [git_ref]
+
+  profile     GPU / node profile: gpus | gpul | a100
+  repo        Git URL, git@github.com:org/repo.git, or org/repo (GitHub shorthand)
+  train_script Path inside the repo to the training entrypoint (e.g. train/act/train.sh)
+  train_config Path inside the repo to the job YAML (for train/act/train.sh this should be
+               train/act/configs/job.yaml — dataset + policy). For train/act/train.sh, launch
+               auto-selects a device YAML from profile (gpus/gpul/a100) unless overridden.
+  git_ref     Optional branch or tag (default: main)
+
+Environment overrides:
+  NAMESPACE, SERVICE_ACCOUNT_NAME, LAUNCH_IMAGE
+  DATA_PVC, CHECKPOINT_PVC
+  GIT_CLONE_DEPTH
+  LAUNCH_MEM_REQUEST, LAUNCH_MEM_LIMIT, LAUNCH_CPU_REQUEST, LAUNCH_CPU_LIMIT
+  LAUNCH_GPU_REQUEST, LAUNCH_GPU_LIMIT   (override profile GPU counts)
+  LAUNCH_DEVICE_CONFIG_REL               Optional repo-relative path to force DEVICE_CONFIG
+                                         (e.g. train/act/configs/aws_gpul.yaml)
+  DRY_RUN=1 or --dry-run                 Print manifest only (no kubectl)
+
+Examples (lerobot-edit-scripts ACT — job YAML + profile-mapped device file):
+  ./launch gpul ETHRoboticsClub/lerobot-edit-scripts \\
+    train/act/train.sh train/act/configs/job.yaml
+  ./launch a100 ETHRoboticsClub/lerobot-edit-scripts \\
+    train/act/train.sh train/act/configs/job.yaml
+
+Follow logs:
+  kubectl -n robot-learning logs -f job/<trainjob-pod-name> -c node
+  (pod name: kubectl -n robot-learning get pods -l job-name=<TrainJob.metadata.name> ...)
+EOF
+}
+
+log() {
+  printf '[launch] %s\n' "$*" >&2
+}
+
+die() {
+  log "$*"
+  exit 1
+}
+
+yaml_sq() {
+  local s="${1:-}"
+  s="${s//\'/\'\'}"
+  printf "'%s'" "$s"
+}
+
+safe_rel_path() {
+  local p="$1"
+  local name="$2"
+  if [[ -z "${p}" || "${p}" == /* || "${p}" == ../* || "${p}" == */.. || "${p}" == */../* ]]; then
+    die "${name} must be a relative repo path (no leading / or ..)."
+  fi
+  if [[ "${p}" != *[a-zA-Z]* ]]; then
+    die "${name} looks invalid."
+  fi
+}
+
+resolve_repo_url() {
+  local raw="$1"
+  case "${raw}" in
+    https://* | http://* | git@* | ssh://*)
+      printf '%s\n' "${raw}"
+      ;;
+    *@*:*)
+      printf '%s\n' "${raw}"
+      ;;
+    */*)
+      printf 'https://github.com/%s.git\n' "${raw}"
+      ;;
+    *)
+      die "Could not interpret repo as a URL or org/repo: ${raw}"
+      ;;
+  esac
+}
+
+profile_apply() {
+  local name="$1"
+  case "${name}" in
+    gpus)
+      NODEPOOL="gpus"
+      NODETIER="gpus"
+      GPU_REQUEST="${LAUNCH_GPU_REQUEST:-1}"
+      GPU_LIMIT="${LAUNCH_GPU_LIMIT:-1}"
+      CPU_REQUEST="${LAUNCH_CPU_REQUEST:-1}"
+      CPU_LIMIT="${LAUNCH_CPU_LIMIT:-8}"
+      MEM_REQUEST="${LAUNCH_MEM_REQUEST:-4Gi}"
+      MEM_LIMIT="${LAUNCH_MEM_LIMIT:-16Gi}"
+      MULTI_GPU_ENV=0
+      ;;
+    gpul)
+      NODEPOOL="gpul"
+      NODETIER="gpul"
+      GPU_REQUEST="${LAUNCH_GPU_REQUEST:-4}"
+      GPU_LIMIT="${LAUNCH_GPU_LIMIT:-4}"
+      CPU_REQUEST="${LAUNCH_CPU_REQUEST:-1}"
+      CPU_LIMIT="${LAUNCH_CPU_LIMIT:-8}"
+      MEM_REQUEST="${LAUNCH_MEM_REQUEST:-320Gi}"
+      MEM_LIMIT="${LAUNCH_MEM_LIMIT:-384Gi}"
+      MULTI_GPU_ENV=1
+      ;;
+    a100)
+      NODEPOOL="a100-40"
+      NODETIER="a100-40"
+      GPU_REQUEST="${LAUNCH_GPU_REQUEST:-1}"
+      GPU_LIMIT="${LAUNCH_GPU_LIMIT:-1}"
+      CPU_REQUEST="${LAUNCH_CPU_REQUEST:-1}"
+      CPU_LIMIT="${LAUNCH_CPU_LIMIT:-8}"
+      MEM_REQUEST="${LAUNCH_MEM_REQUEST:-4Gi}"
+      MEM_LIMIT="${LAUNCH_MEM_LIMIT:-32Gi}"
+      MULTI_GPU_ENV=0
+      ;;
+    *)
+      die "Unknown profile '${name}'. Use: gpus, gpul, a100"
+      ;;
+  esac
+}
+
+list_profiles() {
+  cat >&2 <<'EOF'
+Profiles (node selectors match robot-learning/interactive/configs/*.yaml):
+
+  gpus   karpenter nodepool gpus   — 1× GPU, 4–16Gi RAM defaults
+  gpul   karpenter nodepool gpul   — 4× GPU, 320–384Gi RAM (L40S-class nodes)
+  a100   karpenter nodepool a100-40 — 1× A100 40GB, 4–32Gi RAM defaults
+
+Override RAM/GPU if scheduling fails, e.g.:
+  LAUNCH_MEM_REQUEST=256Gi LAUNCH_MEM_LIMIT=320Gi ./launch gpul ...
+EOF
+}
+
+default_device_config_for_profile() {
+  local profile="$1"
+  local train_script="$2"
+
+  if [[ "${train_script}" != "train/act/train.sh" ]]; then
+    return 0
+  fi
+
+  case "${profile}" in
+    gpus)
+      printf 'train/act/configs/aws_gpus.yaml\n'
+      ;;
+    gpul)
+      printf 'train/act/configs/aws_gpul.yaml\n'
+      ;;
+    a100)
+      printf 'train/act/configs/aws_a100.yaml\n'
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+emit_trainjob_yaml() {
+  local job_name="$1"
+  local cm_name="$2"
+  local profile="$3"
+  local train_git_url="$4"
+  local train_git_ref="$5"
+  local train_script_rel="$6"
+  local train_config_rel="$7"
+
+  local nvidia_block=""
+  if [[ "${MULTI_GPU_ENV}" == 1 ]]; then
+    nvidia_block="$(cat <<'NVBLOCK'
+      - name: NVIDIA_VISIBLE_DEVICES
+        value: all
+      - name: NCCL_ASYNC_ERROR_HANDLING
+        value: "1"
+NVBLOCK
+)"
+  fi
+
+  local device_override_block=""
+  if [[ -n "${TRAIN_DEVICE_CONFIG_REL:-}" ]]; then
+    device_override_block="$(printf '%s\n' "      - name: TRAIN_DEVICE_CONFIG_REL" "        value: $(yaml_sq "${TRAIN_DEVICE_CONFIG_REL}")")"
+  fi
+
+  cat <<EOF
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: TrainJob
+metadata:
+  name: ${job_name}
+  namespace: ${NAMESPACE}
+  labels:
+    app: generic-train
+    launch.ethrc.github.io/profile: ${profile}
+spec:
+  runtimeRef:
+    name: torch-distributed
+  trainer:
+    image: ${IMAGE}
+    env:
+      - name: TRAIN_GIT_URL
+        value: $(yaml_sq "${train_git_url}")
+      - name: TRAIN_GIT_REF
+        value: $(yaml_sq "${train_git_ref}")
+      - name: TRAIN_SCRIPT_REL
+        value: $(yaml_sq "${train_script_rel}")
+      - name: TRAIN_CONFIG_REL
+        value: $(yaml_sq "${train_config_rel}")
+      - name: GIT_CLONE_DEPTH
+        value: $(yaml_sq "${GIT_CLONE_DEPTH}")
+${device_override_block}
+${nvidia_block}
+    command:
+      - /bin/bash
+      - -lc
+      - |
+        set -euxo pipefail
+        sudo mkdir -p /data /checkpoints
+        sudo chown -R "\$(id -u):\$(id -g)" /data /checkpoints
+        exec > >(tee -a /checkpoints/generic-train-bootstrap.log) 2>&1
+        set +x
+        export WANDB_API_KEY="\$(cat /var/run/secrets/wandb/WANDB_API_KEY)"
+        export HF_TOKEN="\$(cat /var/run/secrets/hf/HF_TOKEN)"
+        set -x
+        exec /bin/bash /job-files/pod-bootstrap.sh
+    numNodes: 1
+    resourcesPerNode:
+      requests:
+        cpu: "${CPU_REQUEST}"
+        memory: "${MEM_REQUEST}"
+        nvidia.com/gpu: "${GPU_REQUEST}"
+      limits:
+        cpu: "${CPU_LIMIT}"
+        memory: "${MEM_LIMIT}"
+        nvidia.com/gpu: "${GPU_LIMIT}"
+  podTemplateOverrides:
+    - targetJobs:
+        - name: node
+      spec:
+        serviceAccountName: ${SERVICE_ACCOUNT_NAME}
+        nodeSelector:
+          karpenter.sh/nodepool: ${NODEPOOL}
+          node-tier: ${NODETIER}
+        tolerations:
+          - key: nvidia.com/gpu
+            operator: Exists
+            effect: NoSchedule
+        volumes:
+          - name: data
+            persistentVolumeClaim:
+              claimName: ${DATA_PVC}
+          - name: checkpoints
+            persistentVolumeClaim:
+              claimName: ${CHECKPOINT_PVC}
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 8Gi
+          - name: wandb-secret
+            secret:
+              secretName: wandb-secret
+          - name: hf-secret
+            secret:
+              secretName: hf-secret
+          - name: job-files
+            configMap:
+              name: ${cm_name}
+              defaultMode: 0755
+        containers:
+          - name: node
+            volumeMounts:
+              - name: data
+                mountPath: /data
+              - name: checkpoints
+                mountPath: /checkpoints
+              - name: dshm
+                mountPath: /dev/shm
+              - name: wandb-secret
+                mountPath: /var/run/secrets/wandb
+                readOnly: true
+              - name: hf-secret
+                mountPath: /var/run/secrets/hf
+                readOnly: true
+              - name: job-files
+                mountPath: /job-files
+                readOnly: true
+EOF
+}
+
+main() {
+  if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    usage
+    exit 0
+  fi
+  if [[ "${1:-}" == "--list-profiles" ]]; then
+    list_profiles
+    exit 0
+  fi
+
+  if [[ "${1:-}" == "--dry-run" ]]; then
+    DRY_RUN=1
+    shift
+  fi
+
+  local profile="${1:-}"
+  local repo="${2:-}"
+  local train_script="${3:-}"
+  local train_config="${4:-}"
+  local git_ref="${5:-main}"
+
+  if [[ -z "${profile}" || -z "${repo}" || -z "${train_script}" || -z "${train_config}" ]]; then
+    usage
+    exit 1
+  fi
+
+  [[ -f "${BOOTSTRAP_LOCAL}" ]] || die "Missing bootstrap script: ${BOOTSTRAP_LOCAL}"
+
+  safe_rel_path "${train_script}" "train_script"
+  safe_rel_path "${train_config}" "train_config"
+
+  local train_git_url
+  train_git_url="$(resolve_repo_url "${repo}")"
+
+  profile_apply "${profile}"
+
+  TRAIN_DEVICE_CONFIG_REL="${LAUNCH_DEVICE_CONFIG_REL:-}"
+  if [[ -z "${TRAIN_DEVICE_CONFIG_REL}" ]]; then
+    TRAIN_DEVICE_CONFIG_REL="$(default_device_config_for_profile "${profile}" "${train_script}" || true)"
+  fi
+  if [[ -n "${TRAIN_DEVICE_CONFIG_REL}" ]]; then
+    safe_rel_path "${TRAIN_DEVICE_CONFIG_REL}" "LAUNCH_DEVICE_CONFIG_REL"
+    log "Device config (DEVICE_CONFIG): ${TRAIN_DEVICE_CONFIG_REL}"
+  fi
+
+  local run_id
+  run_id="$(date +%Y%m%d-%H%M%S)"
+  local job_name="generic-train-${run_id}"
+  local cm_name="${job_name}-bootstrap"
+
+  log "TrainJob: ${job_name}"
+  log "Profile: ${profile} (nodepool=${NODEPOOL}, gpus=${GPU_REQUEST})"
+  log "Repo: ${train_git_url} @ ${git_ref}"
+  log "Script: ${train_script}"
+  log "Config (JOB_CONFIG): ${train_config}"
+
+  local manifest
+  manifest="$(mktemp)"
+  emit_trainjob_yaml "${job_name}" "${cm_name}" "${profile}" "${train_git_url}" "${git_ref}" "${train_script}" "${train_config}" >"${manifest}"
+
+  if [[ "${DRY_RUN}" == 1 ]]; then
+    cat "${manifest}"
+    rm -f "${manifest}"
+    log "Dry run: no resources applied."
+    exit 0
+  fi
+
+  kubectl create configmap "${cm_name}" \
+    -n "${NAMESPACE}" \
+    --from-file=pod-bootstrap.sh="${BOOTSTRAP_LOCAL}" \
+    --dry-run=client \
+    -o yaml \
+    | kubectl apply -f -
+
+  kubectl apply -f "${manifest}"
+  rm -f "${manifest}"
+
+  log "Applied. Tail logs:"
+  log "  kubectl -n ${NAMESPACE} get pods | grep ${job_name}"
+  log "  kubectl -n ${NAMESPACE} logs -f <pod-name> -c node"
+}
+
+main "$@"
