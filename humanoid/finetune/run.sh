@@ -150,7 +150,7 @@ if [ "$UPLOAD_OK" = false ]; then
   echo "[run.sh] =================================================="
   echo "[run.sh] Checkpoints are at: ${CHECKPOINT_DIR}"
   echo "[run.sh] Run: kubectl cp humanoid/<pod-name>:${CHECKPOINT_DIR} ./g1_finetune -c node"
-  echo "[run.sh] Container will stay alive for 6 hours for manual download."
+  echo "[run.sh] Container will stay alive for 2 hours for manual download."
   echo "[run.sh] =================================================="
-  sleep 21600
+  sleep 7200
 fi
