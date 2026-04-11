@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DATASET_LOCAL_PATH="/data/G1-sim"
+DATASET_LOCAL_PATH="/data/PnPCubeLine"
 CHECKPOINT_DIR="/checkpoints/g1_finetune"
 REPO_URL="https://github.com/LucaFrat/Isaac-GR00T.git"
 REPO_DIR="$HOME/Isaac-GR00T"
@@ -34,7 +34,7 @@ if [ -d "${CHECKPOINT_DIR}" ] && [ -n "$(ls -A "${CHECKPOINT_DIR}" 2>/dev/null)"
 fi
 
 # ── 2. Dataset check / download ──────────────────────────────────────────────
-HF_REPO_ID="LucaFrat/G1-sim"
+HF_REPO_ID="LucaFrat/PnPCubeLine"
 
 if [ -d "${DATASET_LOCAL_PATH}" ] && [ -n "$(ls -A "${DATASET_LOCAL_PATH}" 2>/dev/null)" ]; then
   echo "[run.sh] Dataset found at ${DATASET_LOCAL_PATH}. Skipping download."
@@ -132,7 +132,7 @@ import os
 from huggingface_hub import upload_folder
 upload_folder(
     folder_path='${CHECKPOINT_DIR}',
-    repo_id='LucaFrat/G1-finetune-checkpoints',
+    repo_id='LucaFrat/PnPCubeLineChecks',
     repo_type='model',
     token=os.environ['HF_TOKEN'],
 )
