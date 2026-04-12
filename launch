@@ -45,6 +45,10 @@ Examples (lerobot-edit-scripts ACT — job YAML + profile-mapped device file):
 Follow logs:
   kubectl -n robot-learning logs -f job/<trainjob-pod-name> -c node
   (pod name: kubectl -n robot-learning get pods -l job-name=<TrainJob.metadata.name> ...)
+
+Kill launched jobs:
+  ./kill <TrainJob/Pod/ConfigMap name copied from k9s>
+  ./kill robot-learning
 EOF
 }
 
@@ -234,7 +238,12 @@ metadata:
   namespace: ${NAMESPACE}
   labels:
     app: generic-train
+    launch.ethrc.github.io/managed-by: launch
+    launch.ethrc.github.io/job-name: ${job_name}
     launch.ethrc.github.io/profile: ${profile}
+  annotations:
+    launch.ethrc.github.io/kill-one: $(yaml_sq "./kill ${job_name}")
+    launch.ethrc.github.io/kill-namespace: $(yaml_sq "./kill ${NAMESPACE}")
 spec:
   runtimeRef:
     name: torch-distributed
@@ -404,12 +413,23 @@ main() {
     -o yaml \
     | kubectl apply -f -
 
+  kubectl -n "${NAMESPACE}" label configmap "${cm_name}" \
+    app=generic-train \
+    launch.ethrc.github.io/managed-by=launch \
+    launch.ethrc.github.io/job-name="${job_name}" \
+    --overwrite
+
   kubectl apply -f "${manifest}"
   rm -f "${manifest}"
 
   log "Applied. Tail logs:"
   log "  kubectl -n ${NAMESPACE} get pods | grep ${job_name}"
   log "  kubectl -n ${NAMESPACE} logs -f <pod-name> -c node"
+  log "Kill this job:"
+  log "  ./kill ${job_name}"
+  log "  (or copy a TrainJob, Pod, or ConfigMap name from k9s and run ./kill <copied-name>)"
+  log "Kill all ./launch jobs in this namespace:"
+  log "  ./kill ${NAMESPACE}"
 }
 
 main "$@"
