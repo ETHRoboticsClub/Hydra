@@ -7,7 +7,7 @@ DATASET_REVISION="${DATASET_REVISION:-trimmed}"
 CHECKPOINT_DIR="/checkpoints/act_realsense"
 
 # Cache uv packages and venv on persistent storage
-export UV_CACHE_DIR="/data/.uv-cache"
+export UV_CACHE_DIR="${UV_CACHE_DIR:-/cache/uv}"
 export VIRTUAL_ENV="/data/.venv"
 export PATH="${VIRTUAL_ENV}/bin:${PATH}"
 

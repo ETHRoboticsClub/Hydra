@@ -1,6 +1,18 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  name: cache
+  namespace: robot-learning
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
   name: act-data
   namespace: robot-learning
 spec:
