@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+NAMESPACE="${NAMESPACE:-robot-learning}"
+
+usage() {
+  cat >&2 <<'EOF'
+Usage:
+  ./stop-generic-trainjob <trainjob-name>
+  ./stop-generic-trainjob --all
+
+Examples:
+  ./stop-generic-trainjob generic-train-20260408-152000
+  ./stop-generic-trainjob --all
+EOF
+}
+
+delete_job() {
+  local job_name="$1"
+  local cm_name="${job_name}-bootstrap"
+  echo "[stop] deleting trainjob/${job_name} (namespace=${NAMESPACE})"
+  kubectl -n "${NAMESPACE}" delete trainjob "${job_name}" --ignore-not-found
+  kubectl -n "${NAMESPACE}" delete configmap "${cm_name}" --ignore-not-found
+}
+
+main() {
+  local target="${1:-}"
+  if [[ "${target}" == "-h" || "${target}" == "--help" ]]; then
+    usage
+    exit 0
+  fi
+  if [[ -z "${target}" ]]; then
+    usage
+    exit 1
+  fi
+
+  if [[ "${target}" == "--all" ]]; then
+    mapfile -t jobs < <(kubectl -n "${NAMESPACE}" get trainjobs -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | awk '/^generic-train-/')
+    if [[ "${#jobs[@]}" -eq 0 ]]; then
+      echo "[stop] no generic-train jobs found in namespace ${NAMESPACE}"
+      exit 0
+    fi
+    for job in "${jobs[@]}"; do
+      delete_job "${job}"
+    done
+    exit 0
+  fi
+
+  delete_job "${target}"
+}
+
+main "$@"
