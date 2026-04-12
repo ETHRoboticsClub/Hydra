@@ -107,8 +107,8 @@ profile_apply() {
       GPU_LIMIT="${LAUNCH_GPU_LIMIT:-1}"
       CPU_REQUEST="${LAUNCH_CPU_REQUEST:-1}"
       CPU_LIMIT="${LAUNCH_CPU_LIMIT:-8}"
-      MEM_REQUEST="${LAUNCH_MEM_REQUEST:-4Gi}"
-      MEM_LIMIT="${LAUNCH_MEM_LIMIT:-16Gi}"
+      MEM_REQUEST="${LAUNCH_MEM_REQUEST:-16Gi}"
+      MEM_LIMIT="${LAUNCH_MEM_LIMIT:-32Gi}"
       MULTI_GPU_ENV=0
       ;;
     gpul)
@@ -129,8 +129,8 @@ profile_apply() {
       GPU_LIMIT="${LAUNCH_GPU_LIMIT:-1}"
       CPU_REQUEST="${LAUNCH_CPU_REQUEST:-1}"
       CPU_LIMIT="${LAUNCH_CPU_LIMIT:-8}"
-      MEM_REQUEST="${LAUNCH_MEM_REQUEST:-4Gi}"
-      MEM_LIMIT="${LAUNCH_MEM_LIMIT:-16Gi}"
+      MEM_REQUEST="${LAUNCH_MEM_REQUEST:-16Gi}"
+      MEM_LIMIT="${LAUNCH_MEM_LIMIT:-32Gi}"
       MULTI_GPU_ENV=0
       ;;
     a100)
@@ -165,9 +165,9 @@ list_profiles() {
   cat >&2 <<'EOF'
 Profiles (node selectors match robot-learning/interactive/configs/*.yaml):
 
-  gpus   karpenter nodepool gpus   — 1× GPU, 4–16Gi RAM defaults
+  gpus   karpenter nodepool gpus   — 1× GPU, 16–32Gi RAM defaults
   gpul   karpenter nodepool gpul   — 4× GPU, 320–384Gi RAM (L40S-class nodes)
-  gpum   karpenter nodepool gpum   — 1× GPU, 4–16Gi RAM defaults
+  gpum   karpenter nodepool gpum   — 1× GPU, 16–32Gi RAM defaults
   a100   karpenter nodepool a100-40 — 1× A100 40GB, 4–32Gi RAM defaults
   a100-80 karpenter nodepool a100-80 — 1× A100 80GB, 4–64Gi RAM defaults
 
@@ -410,7 +410,7 @@ main() {
   local cm_name="${job_name}-bootstrap"
 
   log "TrainJob: ${job_name}"
-  log "Profile: ${profile} (nodepool=${NODEPOOL}, gpus=${GPU_REQUEST})"
+  log "Profile: ${profile} (nodepool=${NODEPOOL}, gpus=${GPU_REQUEST}, cpu=${CPU_REQUEST}/${CPU_LIMIT}, mem=${MEM_REQUEST}/${MEM_LIMIT})"
   log "Repo: ${train_git_url} @ ${git_ref}"
   log "Script: ${train_script}"
   log "Config (JOB_CONFIG): ${train_config}"
