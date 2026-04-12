@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+DEFAULT_NAMESPACE="${NAMESPACE:-robot-learning}"
+
+usage() {
+  cat >&2 <<'EOF'
+Usage:
+  ./kill <TrainJob/Pod/ConfigMap name>
+  ./kill <namespace>
+
+Single job:
+  Deletes one ./launch job from NAMESPACE (default: robot-learning).
+  You can paste names copied from k9s, including:
+    generic-train-20260412-152830
+    trainjob/generic-train-20260412-152830
+    pod/generic-train-20260412-152830-node-0-abcde
+    generic-train-20260412-152830-bootstrap
+
+Namespace:
+  Deletes all jobs launched with ./launch in the given namespace:
+    ./kill robot-learning
+
+Environment:
+  NAMESPACE  Namespace used for single-job deletion (default: robot-learning)
+EOF
+}
+
+log() {
+  printf '[kill] %s\n' "$*" >&2
+}
+
+die() {
+  log "$*"
+  exit 1
+}
+
+extract_job_name() {
+  local raw="$1"
+  if [[ "${raw}" =~ (generic-train-[0-9]{8}-[0-9]{6}) ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  return 1
+}
+
+validate_namespace() {
+  local namespace="$1"
+  if [[ ! "${namespace}" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]]; then
+    die "Invalid namespace '${namespace}'. Expected a Kubernetes namespace name, or a generic-train-* job/pod/configmap name."
+  fi
+}
+
+delete_one() {
+  local raw="$1"
+  local namespace="${DEFAULT_NAMESPACE}"
+  local job_name
+  job_name="$(extract_job_name "${raw}")" || die "Could not find a generic-train-YYYYMMDD-HHMMSS job name in '${raw}'."
+
+  log "Deleting ./launch job ${job_name} in namespace ${namespace}"
+  kubectl -n "${namespace}" delete --ignore-not-found trainjob "${job_name}"
+  kubectl -n "${namespace}" delete --ignore-not-found configmap "${job_name}-bootstrap"
+}
+
+delete_namespace() {
+  local namespace="$1"
+  validate_namespace "${namespace}"
+
+  log "Deleting all ./launch jobs in namespace ${namespace}"
+  kubectl -n "${namespace}" delete --ignore-not-found trainjob -l app=generic-train
+  kubectl -n "${namespace}" delete --ignore-not-found configmap -l 'app=generic-train,launch.ethrc.github.io/managed-by=launch'
+
+  local resources
+  resources="$(kubectl -n "${namespace}" get configmap -o name)"
+
+  local legacy_configmaps=()
+  local resource
+  while IFS= read -r resource; do
+    if [[ "${resource}" =~ ^configmap/(generic-train-[0-9]{8}-[0-9]{6}-bootstrap)$ ]]; then
+      legacy_configmaps+=("${BASH_REMATCH[1]}")
+    fi
+  done <<< "${resources}"
+
+  if (( ${#legacy_configmaps[@]} > 0 )); then
+    kubectl -n "${namespace}" delete --ignore-not-found configmap "${legacy_configmaps[@]}"
+  else
+    log "No legacy bootstrap ConfigMaps found."
+  fi
+}
+
+main() {
+  if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    usage
+    exit 0
+  fi
+
+  if [[ "$#" -ne 1 ]]; then
+    usage
+    exit 1
+  fi
+
+  local target="$1"
+  if extract_job_name "${target}" >/dev/null; then
+    delete_one "${target}"
+  else
+    delete_namespace "${target}"
+  fi
+}
+
+main "$@"

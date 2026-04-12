@@ -46,9 +46,9 @@ Follow logs:
   kubectl -n robot-learning logs -f job/<trainjob-pod-name> -c node
   (pod name: kubectl -n robot-learning get pods -l job-name=<TrainJob.metadata.name> ...)
 
-Stop jobs:
-  ./stop-generic-trainjob <trainjob-name>
-  ./stop-generic-trainjob --all
+Kill launched jobs:
+  ./kill <TrainJob/Pod/ConfigMap name copied from k9s>
+  ./kill robot-learning
 EOF
 }
 
@@ -414,6 +414,10 @@ main() {
   log "Applied. Tail logs:"
   log "  kubectl -n ${NAMESPACE} get pods | grep ${job_name}"
   log "  kubectl -n ${NAMESPACE} logs -f <pod-name> -c node"
+  log "Kill this job:"
+  log "  ./kill ${job_name}"
+  log "Kill all ./launch jobs in this namespace:"
+  log "  ./kill ${NAMESPACE}"
 }
 
 main "$@"
