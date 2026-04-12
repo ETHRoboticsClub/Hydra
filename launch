@@ -10,6 +10,7 @@ SERVICE_ACCOUNT_NAME="${SERVICE_ACCOUNT_NAME:-training-sa}"
 IMAGE="${LAUNCH_IMAGE:-916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-d866de5}"
 DATA_PVC="${DATA_PVC:-act-data}"
 CHECKPOINT_PVC="${CHECKPOINT_PVC:-act-checkpoints}"
+CACHE_PVC="${CACHE_PVC:-cache}"
 GIT_CLONE_DEPTH="${GIT_CLONE_DEPTH:-1}"
 DRY_RUN="${DRY_RUN:-0}"
 
@@ -28,7 +29,7 @@ Usage:
 
 Environment overrides:
   NAMESPACE, SERVICE_ACCOUNT_NAME, LAUNCH_IMAGE
-  DATA_PVC, CHECKPOINT_PVC
+  DATA_PVC, CHECKPOINT_PVC, CACHE_PVC
   GIT_CLONE_DEPTH
   LAUNCH_MEM_REQUEST, LAUNCH_MEM_LIMIT, LAUNCH_CPU_REQUEST, LAUNCH_CPU_LIMIT
   LAUNCH_GPU_REQUEST, LAUNCH_GPU_LIMIT   (override profile GPU counts)
@@ -238,7 +239,12 @@ metadata:
   namespace: ${NAMESPACE}
   labels:
     app: generic-train
+    launch.ethrc.github.io/managed-by: launch
+    launch.ethrc.github.io/job-name: ${job_name}
     launch.ethrc.github.io/profile: ${profile}
+  annotations:
+    launch.ethrc.github.io/kill-one: $(yaml_sq "./kill ${job_name}")
+    launch.ethrc.github.io/kill-namespace: $(yaml_sq "./kill ${NAMESPACE}")
 spec:
   runtimeRef:
     name: torch-distributed
@@ -255,6 +261,20 @@ spec:
         value: $(yaml_sq "${train_config_rel}")
       - name: GIT_CLONE_DEPTH
         value: $(yaml_sq "${GIT_CLONE_DEPTH}")
+      - name: UV_CACHE_DIR
+        value: /cache/uv
+      - name: HF_HOME
+        value: /cache/hf
+      - name: HF_HUB_CACHE
+        value: /cache/hf/hub
+      - name: HF_DATASETS_CACHE
+        value: /cache/hf/datasets
+      - name: TORCH_HOME
+        value: /cache/torch
+      - name: TORCHINDUCTOR_CACHE_DIR
+        value: /cache/torch/inductor
+      - name: TRITON_CACHE_DIR
+        value: /cache/torch/triton
 ${device_override_block}
 ${nvidia_block}
     command:
@@ -262,8 +282,8 @@ ${nvidia_block}
       - -lc
       - |
         set -euxo pipefail
-        sudo mkdir -p /data /checkpoints
-        sudo chown -R "\$(id -u):\$(id -g)" /data /checkpoints
+        sudo mkdir -p /data /checkpoints /cache/hf /cache/uv /cache/torch
+        sudo chown -R "\$(id -u):\$(id -g)" /data /checkpoints /cache
         exec > >(tee -a /checkpoints/generic-train-bootstrap.log) 2>&1
         set +x
         export WANDB_API_KEY="\$(cat /var/run/secrets/wandb/WANDB_API_KEY)"
@@ -299,6 +319,9 @@ ${nvidia_block}
           - name: checkpoints
             persistentVolumeClaim:
               claimName: ${CHECKPOINT_PVC}
+          - name: cache
+            persistentVolumeClaim:
+              claimName: ${CACHE_PVC}
           - name: dshm
             emptyDir:
               medium: Memory
@@ -320,6 +343,8 @@ ${nvidia_block}
                 mountPath: /data
               - name: checkpoints
                 mountPath: /checkpoints
+              - name: cache
+                mountPath: /cache
               - name: dshm
                 mountPath: /dev/shm
               - name: wandb-secret
@@ -408,6 +433,12 @@ main() {
     -o yaml \
     | kubectl apply -f -
 
+  kubectl -n "${NAMESPACE}" label configmap "${cm_name}" \
+    app=generic-train \
+    launch.ethrc.github.io/managed-by=launch \
+    launch.ethrc.github.io/job-name="${job_name}" \
+    --overwrite
+
   kubectl apply -f "${manifest}"
   rm -f "${manifest}"
 
@@ -416,6 +447,7 @@ main() {
   log "  kubectl -n ${NAMESPACE} logs -f <pod-name> -c node"
   log "Kill this job:"
   log "  ./kill ${job_name}"
+  log "  (or copy a TrainJob, Pod, or ConfigMap name from k9s and run ./kill <copied-name>)"
   log "Kill all ./launch jobs in this namespace:"
   log "  ./kill ${NAMESPACE}"
 }
