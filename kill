@@ -66,6 +66,18 @@ delete_namespace() {
   local namespace="$1"
   validate_namespace "${namespace}"
 
+  local confirmation
+  printf "AYO! You're about to kill all the jobs for your division. Typically you should never do this because this could include jobs your club-mates are running. Are you sure? [y/N] " >&2
+  read -r confirmation
+  case "${confirmation}" in
+    y | Y | yes | YES)
+      ;;
+    *)
+      log "Aborted."
+      exit 1
+      ;;
+  esac
+
   log "Deleting all ./launch jobs in namespace ${namespace}"
   kubectl -n "${namespace}" delete --ignore-not-found trainjob -l app=generic-train
   kubectl -n "${namespace}" delete --ignore-not-found configmap -l 'app=generic-train,launch.ethrc.github.io/managed-by=launch'
