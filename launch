@@ -39,6 +39,7 @@ Environment overrides:
   DRY_RUN=1 or --dry-run                 Print manifest only (no kubectl)
 
 Examples (lerobot-edit-scripts ACT — job YAML + profile-mapped device file):
+  ./update-volumes
   ./launch gpul ETHRoboticsClub/lerobot-edit-scripts \\
     train/act/train.sh train/act/configs/job.yaml
   ./launch a100 ETHRoboticsClub/lerobot-edit-scripts \\

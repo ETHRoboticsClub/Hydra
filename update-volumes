@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VOLUMECLAIMS_MANIFEST="${VOLUMECLAIMS_MANIFEST:-${SCRIPT_DIR}/launch.d/volumeclaims.yaml}"
+DRY_RUN="${DRY_RUN:-0}"
+
+usage() {
+  cat >&2 <<'EOF'
+Usage:
+  ./update-volumes [--dry-run]
+
+Applies the PersistentVolumeClaims used by ./launch.
+
+Environment:
+  VOLUMECLAIMS_MANIFEST  Manifest to apply (default: launch.d/volumeclaims.yaml)
+  DRY_RUN=1 or --dry-run Print the server-side dry-run result only
+EOF
+}
+
+log() {
+  printf '[update-volumes] %s\n' "$*" >&2
+}
+
+die() {
+  log "$*"
+  exit 1
+}
+
+main() {
+  if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    usage
+    exit 0
+  fi
+
+  if [[ "${1:-}" == "--dry-run" ]]; then
+    DRY_RUN=1
+    shift
+  fi
+
+  if [[ "$#" -ne 0 ]]; then
+    usage
+    exit 1
+  fi
+
+  [[ -f "${VOLUMECLAIMS_MANIFEST}" ]] || die "Missing volume claims manifest: ${VOLUMECLAIMS_MANIFEST}"
+
+  if [[ "${DRY_RUN}" == 1 ]]; then
+    log "Dry run applying ${VOLUMECLAIMS_MANIFEST}"
+    kubectl apply --dry-run=server -f "${VOLUMECLAIMS_MANIFEST}"
+    exit 0
+  fi
+
+  log "Applying ${VOLUMECLAIMS_MANIFEST}"
+  kubectl apply -f "${VOLUMECLAIMS_MANIFEST}"
+}
+
+main "$@"
