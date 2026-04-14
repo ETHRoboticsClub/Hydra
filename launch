@@ -37,6 +37,7 @@ Environment overrides:
   LAUNCH_DEVICE_CONFIG_REL               Optional repo-relative path to force DEVICE_CONFIG
                                          (e.g. train/act/configs/aws_gpul.yaml)
   DRY_RUN=1 or --dry-run                 Print manifest only (no kubectl)
+  LAUNCHER_ID                            Override detected launcher identity
 
 Examples (lerobot-edit-scripts ACT — job YAML + profile-mapped device file):
   ./update-volumes
@@ -68,6 +69,28 @@ yaml_sq() {
   local s="${1:-}"
   s="${s//\'/\'\'}"
   printf "'%s'" "$s"
+}
+
+detect_launcher_identity() {
+  if [[ -n "${LAUNCHER_ID:-}" ]]; then
+    printf '%s\n' "${LAUNCHER_ID}"
+    return 0
+  fi
+
+  if command -v aws >/dev/null 2>&1; then
+    local aws_arn
+    aws_arn="$(aws sts get-caller-identity --query Arn --output text 2>/dev/null || true)"
+    if [[ -n "${aws_arn}" && "${aws_arn}" != "None" ]]; then
+      printf 'aws:%s\n' "${aws_arn}"
+      return 0
+    fi
+  fi
+
+  printf 'local:%s@%s\n' "${USER:-unknown}" "$(hostname -s 2>/dev/null || hostname)"
+}
+
+launcher_hash() {
+  printf '%s' "$1" | shasum -a 256 | awk '{print substr($1, 1, 16)}'
 }
 
 safe_rel_path() {
@@ -244,7 +267,10 @@ metadata:
     launch.ethrc.github.io/managed-by: launch
     launch.ethrc.github.io/job-name: ${job_name}
     launch.ethrc.github.io/profile: ${profile}
+    launch.ethrc.github.io/launcher-hash: ${LAUNCHER_HASH}
   annotations:
+    launch.ethrc.github.io/launcher: $(yaml_sq "${LAUNCHER_ID_RAW}")
+    launch.ethrc.github.io/kill-mine: $(yaml_sq "./kill mine")
     launch.ethrc.github.io/kill-one: $(yaml_sq "./kill ${job_name}")
     launch.ethrc.github.io/kill-namespace: $(yaml_sq "./kill ${NAMESPACE}")
 spec:
@@ -400,6 +426,9 @@ main() {
   local train_git_url
   train_git_url="$(resolve_repo_url "${repo}")"
 
+  LAUNCHER_ID_RAW="$(detect_launcher_identity)"
+  LAUNCHER_HASH="$(launcher_hash "${LAUNCHER_ID_RAW}")"
+
   profile_apply "${profile}"
 
   TRAIN_DEVICE_CONFIG_REL="${LAUNCH_DEVICE_CONFIG_REL:-}"
@@ -417,6 +446,7 @@ main() {
   local cm_name="${job_name}-bootstrap"
 
   log "TrainJob: ${job_name}"
+  log "Launcher: ${LAUNCHER_ID_RAW} (${LAUNCHER_HASH})"
   log "Profile: ${profile} (nodepool=${NODEPOOL}, gpus=${GPU_REQUEST}, cpu=${CPU_REQUEST}/${CPU_LIMIT}, mem=${MEM_REQUEST}/${MEM_LIMIT})"
   log "Repo: ${train_git_url} @ ${git_ref}"
   log "Script: ${train_script}"
@@ -444,6 +474,12 @@ main() {
     app=generic-train \
     launch.ethrc.github.io/managed-by=launch \
     launch.ethrc.github.io/job-name="${job_name}" \
+    launch.ethrc.github.io/launcher-hash="${LAUNCHER_HASH}" \
+    --overwrite
+
+  kubectl -n "${NAMESPACE}" annotate configmap "${cm_name}" \
+    launch.ethrc.github.io/launcher="${LAUNCHER_ID_RAW}" \
+    launch.ethrc.github.io/kill-mine="./kill mine" \
     --overwrite
 
   kubectl apply -f "${manifest}"
@@ -455,6 +491,8 @@ main() {
   log "Kill this job:"
   log "  ./kill ${job_name}"
   log "  (or copy a TrainJob, Pod, or ConfigMap name from k9s and run ./kill <copied-name>)"
+  log "Kill your ./launch jobs:"
+  log "  ./kill mine"
   log "Kill all ./launch jobs in this namespace:"
   log "  ./kill ${NAMESPACE}"
 }

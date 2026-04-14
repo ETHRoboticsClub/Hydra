@@ -2,27 +2,37 @@
 set -Eeuo pipefail
 
 DEFAULT_NAMESPACE="${NAMESPACE:-robot-learning}"
+DIVISION_NAMESPACES=(robot-learning humanoid)
 
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  ./kill <TrainJob/Pod/ConfigMap name>
-  ./kill <namespace>
+  ./kill mine          Kill jobs started by your AWS user
+  ./kill <job-name>    Kill one job copied from k9s
+  ./kill <namespace>   Kill every ./launch job in a division namespace
 
-Single job:
-  Deletes one ./launch job from NAMESPACE (default: robot-learning).
-  You can paste names copied from k9s, including:
-    generic-train-20260412-152830
-    trainjob/generic-train-20260412-152830
-    pod/generic-train-20260412-152830-node-0-abcde
-    generic-train-20260412-152830-bootstrap
+Mine:
+  ./kill mine deletes only jobs launched by your current AWS user in NAMESPACE
+  (default: robot-learning).
 
-Namespace:
-  Deletes all jobs launched with ./launch in the given namespace:
-    ./kill robot-learning
+Division namespaces you can kill:
+EOF
 
-Environment:
-  NAMESPACE  Namespace used for single-job deletion (default: robot-learning)
+  print_visible_division_namespaces >&2
+
+  cat >&2 <<'EOF'
+
+Running ./launch jobs:
+EOF
+
+  print_running_jobs >&2
+
+  cat >&2 <<'EOF'
+
+Examples:
+  ./kill mine
+  ./kill generic-train-20260412-152830
+  ./kill robot-learning
 EOF
 }
 
@@ -47,8 +57,87 @@ extract_job_name() {
 validate_namespace() {
   local namespace="$1"
   if [[ ! "${namespace}" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]]; then
-    die "Invalid namespace '${namespace}'. Expected a Kubernetes namespace name, or a generic-train-* job/pod/configmap name."
+    die "Invalid namespace '${namespace}'."
   fi
+}
+
+namespace_exists() {
+  local namespace="$1"
+  [[ "${namespace}" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || return 1
+  kubectl get namespace "${namespace}" >/dev/null 2>&1
+}
+
+is_division_namespace() {
+  local namespace="$1"
+  local candidate
+  for candidate in "${DIVISION_NAMESPACES[@]}"; do
+    if [[ "${namespace}" == "${candidate}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+visible_division_namespace() {
+  local namespace="$1"
+  is_division_namespace "${namespace}" && namespace_exists "${namespace}"
+}
+
+print_visible_division_namespaces() {
+  local found=0
+  local namespace
+  for namespace in "${DIVISION_NAMESPACES[@]}"; do
+    if visible_division_namespace "${namespace}"; then
+      printf '  %s\n' "${namespace}"
+      found=1
+    fi
+  done
+
+  if [[ "${found}" == 0 ]]; then
+    printf '  No robot-learning or humanoid namespace is visible from your current kube context.\n'
+  fi
+}
+
+print_running_jobs() {
+  local found=0
+  local namespace
+  local jobs
+  for namespace in "${DIVISION_NAMESPACES[@]}"; do
+    visible_division_namespace "${namespace}" || continue
+
+    jobs="$(kubectl -n "${namespace}" get trainjob -l app=generic-train --no-headers 2>/dev/null || true)"
+    if [[ -n "${jobs}" ]]; then
+      found=1
+      printf '  %s:\n' "${namespace}"
+      printf '%s\n' "${jobs}" | awk '{print "    " $1}'
+    fi
+  done
+
+  if [[ "${found}" == 0 ]]; then
+    printf '  No running ./launch jobs found in visible division namespaces.\n'
+  fi
+}
+
+detect_launcher_identity() {
+  if [[ -n "${LAUNCHER_ID:-}" ]]; then
+    printf '%s\n' "${LAUNCHER_ID}"
+    return 0
+  fi
+
+  if command -v aws >/dev/null 2>&1; then
+    local aws_arn
+    aws_arn="$(aws sts get-caller-identity --query Arn --output text 2>/dev/null || true)"
+    if [[ -n "${aws_arn}" && "${aws_arn}" != "None" ]]; then
+      printf 'aws:%s\n' "${aws_arn}"
+      return 0
+    fi
+  fi
+
+  printf 'local:%s@%s\n' "${USER:-unknown}" "$(hostname -s 2>/dev/null || hostname)"
+}
+
+launcher_hash() {
+  printf '%s' "$1" | shasum -a 256 | awk '{print substr($1, 1, 16)}'
 }
 
 delete_one() {
@@ -62,9 +151,27 @@ delete_one() {
   kubectl -n "${namespace}" delete --ignore-not-found configmap "${job_name}-bootstrap"
 }
 
+delete_mine() {
+  local namespace="${DEFAULT_NAMESPACE}"
+  validate_namespace "${namespace}"
+
+  local launcher_id
+  local launcher_hash_value
+  launcher_id="$(detect_launcher_identity)"
+  launcher_hash_value="$(launcher_hash "${launcher_id}")"
+
+  local selector="app=generic-train,launch.ethrc.github.io/launcher-hash=${launcher_hash_value}"
+  local configmap_selector="${selector},launch.ethrc.github.io/managed-by=launch"
+
+  log "Deleting ./launch jobs for ${launcher_id} (${launcher_hash_value}) in namespace ${namespace}"
+  kubectl -n "${namespace}" delete --ignore-not-found trainjob -l "${selector}"
+  kubectl -n "${namespace}" delete --ignore-not-found configmap -l "${configmap_selector}"
+}
+
 delete_namespace() {
   local namespace="$1"
   validate_namespace "${namespace}"
+  visible_division_namespace "${namespace}" || die "Namespace '${namespace}' is not a visible division namespace."
 
   local confirmation
   printf "AYO! You're about to kill all the jobs for your division. Typically you should never do this because this could include jobs your club-mates are running. Are you sure? [y/N] " >&2
@@ -112,10 +219,16 @@ main() {
   fi
 
   local target="$1"
-  if extract_job_name "${target}" >/dev/null; then
+  if [[ "${target}" == "mine" ]]; then
+    delete_mine
+  elif extract_job_name "${target}" >/dev/null; then
     delete_one "${target}"
-  else
+  elif visible_division_namespace "${target}"; then
     delete_namespace "${target}"
+  else
+    log "Unknown target '${target}'. Expected 'mine', a generic-train-* job/pod/configmap name, or a visible division namespace."
+    usage
+    exit 1
   fi
 }
 
