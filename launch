@@ -3,16 +3,8 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAUNCH_D="${SCRIPT_DIR}/launch.d"
-BOOTSTRAP_LOCAL="${LAUNCH_D}/pod-bootstrap.sh"
-
-NAMESPACE="${NAMESPACE:-robot-learning}"
-SERVICE_ACCOUNT_NAME="${SERVICE_ACCOUNT_NAME:-training-sa}"
-IMAGE="${LAUNCH_IMAGE:-916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-d866de5}"
-DATA_PVC="${DATA_PVC:-act-data}"
-CHECKPOINT_PVC="${CHECKPOINT_PVC:-act-checkpoints}"
-CACHE_PVC="${CACHE_PVC:-cache}"
-S3_DATA_PVC="${S3_DATA_PVC:-s3-data}"
-GIT_CLONE_DEPTH="${GIT_CLONE_DEPTH:-1}"
+GENERIC_CONFIG="${LAUNCH_D}/generic.yaml"
+INSTANCE_TYPES_D="${LAUNCH_D}/instance_types"
 DRY_RUN="${DRY_RUN:-0}"
 
 usage() {
@@ -29,9 +21,11 @@ Usage:
   git_ref     Optional branch or tag (default: main)
 
 Environment overrides:
+  launch.d/generic.yaml controls namespace, image, PVCs, shared memory, and trainer env.
+  launch.d/instance_types/<profile>.yaml controls node selectors and resources.
   NAMESPACE, SERVICE_ACCOUNT_NAME, LAUNCH_IMAGE
   DATA_PVC, CHECKPOINT_PVC, CACHE_PVC, S3_DATA_PVC
-  GIT_CLONE_DEPTH
+  GIT_CLONE_DEPTH, SHARED_MEMORY_SIZE
   LAUNCH_MEM_REQUEST, LAUNCH_MEM_LIMIT, LAUNCH_CPU_REQUEST, LAUNCH_CPU_LIMIT
   LAUNCH_GPU_REQUEST, LAUNCH_GPU_LIMIT   (override profile GPU counts)
   LAUNCH_DEVICE_CONFIG_REL               Optional repo-relative path to force DEVICE_CONFIG
@@ -69,6 +63,76 @@ yaml_sq() {
   local s="${1:-}"
   s="${s//\'/\'\'}"
   printf "'%s'" "$s"
+}
+
+yaml_value() {
+  local file="$1"
+  local wanted_key="$2"
+  awk -v wanted_key="${wanted_key}" '
+    index($0, ":") {
+      key = substr($0, 1, index($0, ":") - 1)
+      value = substr($0, index($0, ":") + 1)
+      sub(/^[[:space:]]*/, "", key)
+      sub(/[[:space:]]*$/, "", key)
+      if (key != wanted_key) {
+        next
+      }
+      sub(/^[[:space:]]*/, "", value)
+      sub(/[[:space:]]*$/, "", value)
+      print value
+      exit
+    }
+  ' "${file}"
+}
+
+yaml_map_section() {
+  local file="$1"
+  local section="$2"
+  awk -F: -v section="${section}" '
+    $0 == section ":" {
+      in_section = 1
+      next
+    }
+    in_section && /^[^[:space:]]/ {
+      exit
+    }
+    in_section && /^[[:space:]]+[A-Za-z0-9_]+:/ {
+      key = $1
+      value = substr($0, index($0, ":") + 1)
+      sub(/^[[:space:]]*/, "", key)
+      sub(/[[:space:]]*$/, "", key)
+      sub(/^[[:space:]]*/, "", value)
+      sub(/[[:space:]]*$/, "", value)
+      print key "\t" value
+    }
+  ' "${file}"
+}
+
+load_generic_config() {
+  [[ -f "${GENERIC_CONFIG}" ]] || die "Missing generic launch config: ${GENERIC_CONFIG}"
+
+  local bootstrap_script
+  NAMESPACE="${NAMESPACE:-$(yaml_value "${GENERIC_CONFIG}" namespace)}"
+  SERVICE_ACCOUNT_NAME="${SERVICE_ACCOUNT_NAME:-$(yaml_value "${GENERIC_CONFIG}" service_account_name)}"
+  IMAGE="${LAUNCH_IMAGE:-$(yaml_value "${GENERIC_CONFIG}" image)}"
+  DATA_PVC="${DATA_PVC:-$(yaml_value "${GENERIC_CONFIG}" data_pvc)}"
+  CHECKPOINT_PVC="${CHECKPOINT_PVC:-$(yaml_value "${GENERIC_CONFIG}" checkpoint_pvc)}"
+  CACHE_PVC="${CACHE_PVC:-$(yaml_value "${GENERIC_CONFIG}" cache_pvc)}"
+  S3_DATA_PVC="${S3_DATA_PVC:-$(yaml_value "${GENERIC_CONFIG}" s3_data_pvc)}"
+  GIT_CLONE_DEPTH="${GIT_CLONE_DEPTH:-$(yaml_value "${GENERIC_CONFIG}" git_clone_depth)}"
+  DEFAULT_SHARED_MEMORY_SIZE="$(yaml_value "${GENERIC_CONFIG}" default_shared_memory_size)"
+  BOOTSTRAP_DIRS="${BOOTSTRAP_DIRS:-$(yaml_value "${GENERIC_CONFIG}" bootstrap_dirs)}"
+  BOOTSTRAP_CHOWN_DIRS="${BOOTSTRAP_CHOWN_DIRS:-$(yaml_value "${GENERIC_CONFIG}" bootstrap_chown_dirs)}"
+
+  bootstrap_script="$(yaml_value "${GENERIC_CONFIG}" bootstrap_script)"
+  BOOTSTRAP_LOCAL="${BOOTSTRAP_LOCAL:-${LAUNCH_D}/${bootstrap_script}}"
+
+  local required_var
+  for required_var in NAMESPACE SERVICE_ACCOUNT_NAME IMAGE DATA_PVC CHECKPOINT_PVC CACHE_PVC S3_DATA_PVC GIT_CLONE_DEPTH DEFAULT_SHARED_MEMORY_SIZE BOOTSTRAP_DIRS BOOTSTRAP_CHOWN_DIRS BOOTSTRAP_LOCAL; do
+    if [[ -z "${!required_var:-}" ]]; then
+      die "Generic config is missing ${required_var} in ${GENERIC_CONFIG}"
+    fi
+  done
 }
 
 detect_launcher_identity() {
@@ -124,111 +188,147 @@ resolve_repo_url() {
 
 profile_apply() {
   local name="$1"
-  case "${name}" in
-    gpus)
-      NODEPOOL="gpus"
-      NODETIER="gpus"
-      GPU_REQUEST="${LAUNCH_GPU_REQUEST:-1}"
-      GPU_LIMIT="${LAUNCH_GPU_LIMIT:-1}"
-      CPU_REQUEST="${LAUNCH_CPU_REQUEST:-1}"
-      CPU_LIMIT="${LAUNCH_CPU_LIMIT:-8}"
-      MEM_REQUEST="${LAUNCH_MEM_REQUEST:-16Gi}"
-      MEM_LIMIT="${LAUNCH_MEM_LIMIT:-32Gi}"
-      MULTI_GPU_ENV=0
-      ;;
-    gpul)
-      NODEPOOL="gpul"
-      NODETIER="gpul"
-      GPU_REQUEST="${LAUNCH_GPU_REQUEST:-4}"
-      GPU_LIMIT="${LAUNCH_GPU_LIMIT:-4}"
-      CPU_REQUEST="${LAUNCH_CPU_REQUEST:-1}"
-      CPU_LIMIT="${LAUNCH_CPU_LIMIT:-8}"
-      MEM_REQUEST="${LAUNCH_MEM_REQUEST:-320Gi}"
-      MEM_LIMIT="${LAUNCH_MEM_LIMIT:-384Gi}"
-      MULTI_GPU_ENV=1
-      ;;
-    gpum)
-      NODEPOOL="gpum"
-      NODETIER="gpum"
-      GPU_REQUEST="${LAUNCH_GPU_REQUEST:-1}"
-      GPU_LIMIT="${LAUNCH_GPU_LIMIT:-1}"
-      CPU_REQUEST="${LAUNCH_CPU_REQUEST:-1}"
-      CPU_LIMIT="${LAUNCH_CPU_LIMIT:-8}"
-      MEM_REQUEST="${LAUNCH_MEM_REQUEST:-16Gi}"
-      MEM_LIMIT="${LAUNCH_MEM_LIMIT:-32Gi}"
-      MULTI_GPU_ENV=0
-      ;;
-    a100)
-      NODEPOOL="a100-40"
-      NODETIER="a100-40"
-      GPU_REQUEST="${LAUNCH_GPU_REQUEST:-1}"
-      GPU_LIMIT="${LAUNCH_GPU_LIMIT:-1}"
-      CPU_REQUEST="${LAUNCH_CPU_REQUEST:-1}"
-      CPU_LIMIT="${LAUNCH_CPU_LIMIT:-8}"
-      MEM_REQUEST="${LAUNCH_MEM_REQUEST:-4Gi}"
-      MEM_LIMIT="${LAUNCH_MEM_LIMIT:-32Gi}"
-      MULTI_GPU_ENV=0
-      ;;
-    a100-80)
-      NODEPOOL="a100-80"
-      NODETIER="a100-80"
-      GPU_REQUEST="${LAUNCH_GPU_REQUEST:-1}"
-      GPU_LIMIT="${LAUNCH_GPU_LIMIT:-1}"
-      CPU_REQUEST="${LAUNCH_CPU_REQUEST:-1}"
-      CPU_LIMIT="${LAUNCH_CPU_LIMIT:-8}"
-      MEM_REQUEST="${LAUNCH_MEM_REQUEST:-4Gi}"
-      MEM_LIMIT="${LAUNCH_MEM_LIMIT:-64Gi}"
-      MULTI_GPU_ENV=0
-      ;;
-    *)
-      die "Unknown profile '${name}'. Use: gpus, gpul, gpum, a100, a100-80"
-      ;;
-  esac
+  local config="${INSTANCE_TYPES_D}/${name}.yaml"
+
+  if [[ ! "${name}" =~ ^[a-z0-9][a-z0-9-]*$ || ! -f "${config}" ]]; then
+    die "Unknown profile '${name}'. Run './launch --list-profiles' to see available profiles."
+  fi
+
+  INSTANCE_TYPE_CONFIG="${config}"
+  NODEPOOL=""
+  NODETIER=""
+  GPU_REQUEST=""
+  GPU_LIMIT=""
+  CPU_REQUEST=""
+  CPU_LIMIT=""
+  MEM_REQUEST=""
+  MEM_LIMIT=""
+  INSTANCE_SHARED_MEMORY_SIZE=""
+  MULTI_GPU_ENV=""
+  TRAIN_ACT_DEVICE_CONFIG_DEFAULT=""
+
+  local line
+  local key
+  local value
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    [[ -z "${line}" || "${line}" =~ ^[[:space:]]*# ]] && continue
+    [[ "${line}" =~ ^[[:space:]] ]] && continue
+    [[ "${line}" == *:* ]] || continue
+
+    key="${line%%:*}"
+    value="${line#*:}"
+    key="$(printf '%s' "${key}" | tr -d '[:space:]')"
+    value="$(printf '%s' "${value}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+
+    case "${key}" in
+      description | instance_type | instance_types | vcpus | memory | gpu_model | gpu_memory)
+        ;;
+      nodepool)
+        NODEPOOL="${value}"
+        ;;
+      nodetier)
+        NODETIER="${value}"
+        ;;
+      gpu_request)
+        GPU_REQUEST="${value}"
+        ;;
+      gpu_limit)
+        GPU_LIMIT="${value}"
+        ;;
+      cpu_request)
+        CPU_REQUEST="${value}"
+        ;;
+      cpu_limit)
+        CPU_LIMIT="${value}"
+        ;;
+      memory_request)
+        MEM_REQUEST="${value}"
+        ;;
+      memory_limit)
+        MEM_LIMIT="${value}"
+        ;;
+      shared_memory_size)
+        INSTANCE_SHARED_MEMORY_SIZE="${value}"
+        ;;
+      multi_gpu_env)
+        MULTI_GPU_ENV="${value}"
+        ;;
+      train_act_device_config)
+        TRAIN_ACT_DEVICE_CONFIG_DEFAULT="${value}"
+        ;;
+      extra_trainer_env)
+        ;;
+      *)
+        die "Unknown key '${key}' in ${config}"
+        ;;
+    esac
+  done <"${config}"
+
+  GPU_REQUEST="${LAUNCH_GPU_REQUEST:-${GPU_REQUEST}}"
+  GPU_LIMIT="${LAUNCH_GPU_LIMIT:-${GPU_LIMIT}}"
+  CPU_REQUEST="${LAUNCH_CPU_REQUEST:-${CPU_REQUEST}}"
+  CPU_LIMIT="${LAUNCH_CPU_LIMIT:-${CPU_LIMIT}}"
+  MEM_REQUEST="${LAUNCH_MEM_REQUEST:-${MEM_REQUEST}}"
+  MEM_LIMIT="${LAUNCH_MEM_LIMIT:-${MEM_LIMIT}}"
+  SHARED_MEMORY_SIZE="${SHARED_MEMORY_SIZE:-${INSTANCE_SHARED_MEMORY_SIZE:-${DEFAULT_SHARED_MEMORY_SIZE}}}"
+
+  local required_var
+  for required_var in NODEPOOL NODETIER GPU_REQUEST GPU_LIMIT CPU_REQUEST CPU_LIMIT MEM_REQUEST MEM_LIMIT SHARED_MEMORY_SIZE MULTI_GPU_ENV; do
+    if [[ -z "${!required_var:-}" ]]; then
+      die "Profile '${name}' is missing ${required_var} in ${config}"
+    fi
+  done
 }
 
 list_profiles() {
+  cat >&2 <<EOF
+Profiles from ${INSTANCE_TYPES_D}:
+EOF
+
+  local config
+  local name
+  local description
+  for config in "${INSTANCE_TYPES_D}"/*.yaml; do
+    [[ -f "${config}" ]] || continue
+    name="$(basename "${config}" .yaml)"
+    description="$(yaml_value "${config}" description)"
+    printf '  %-8s %s\n' "${name}" "${description}" >&2
+  done
+
   cat >&2 <<'EOF'
-Profiles (node selectors match robot-learning/interactive/configs/*.yaml):
-
-  gpus   karpenter nodepool gpus   — 1× GPU, 16–32Gi RAM defaults
-  gpul   karpenter nodepool gpul   — 4× GPU, 320–384Gi RAM (L40S-class nodes)
-  gpum   karpenter nodepool gpum   — 1× GPU, 16–32Gi RAM defaults
-  a100   karpenter nodepool a100-40 — 1× A100 40GB, 4–32Gi RAM defaults
-  a100-80 karpenter nodepool a100-80 — 1× A100 80GB, 4–64Gi RAM defaults
-
 Override RAM/GPU if scheduling fails, e.g.:
   LAUNCH_MEM_REQUEST=256Gi LAUNCH_MEM_LIMIT=320Gi ./launch gpul ...
 EOF
 }
 
+emit_trainer_env_yaml() {
+  local key
+  local value
+  while IFS=$'\t' read -r key value; do
+    [[ -n "${key}" ]] || continue
+    printf '      - name: %s\n' "${key}"
+    printf '        value: %s\n' "$(yaml_sq "${value}")"
+  done < <(yaml_map_section "${GENERIC_CONFIG}" trainer_env)
+}
+
+emit_instance_env_yaml() {
+  local key
+  local value
+  while IFS=$'\t' read -r key value; do
+    [[ -n "${key}" ]] || continue
+    printf '      - name: %s\n' "${key}"
+    printf '        value: %s\n' "$(yaml_sq "${value}")"
+  done < <(yaml_map_section "${INSTANCE_TYPE_CONFIG}" extra_trainer_env)
+}
+
 default_device_config_for_profile() {
-  local profile="$1"
   local train_script="$2"
 
   if [[ "${train_script}" != "train/act/train.sh" ]]; then
     return 0
   fi
 
-  case "${profile}" in
-    gpus)
-      printf 'train/act/configs/aws_gpus.yaml\n'
-      ;;
-    gpul)
-      printf 'train/act/configs/aws_gpul.yaml\n'
-      ;;
-    gpum)
-      printf 'train/act/configs/aws_gpus.yaml\n'
-      ;;
-    a100)
-      printf 'train/act/configs/aws_a100.yaml\n'
-      ;;
-    a100-80)
-      printf 'train/act/configs/aws_a100.yaml\n'
-      ;;
-    *)
-      return 0
-      ;;
-  esac
+  printf '%s\n' "${TRAIN_ACT_DEVICE_CONFIG_DEFAULT:-}"
 }
 
 emit_trainjob_yaml() {
@@ -240,21 +340,15 @@ emit_trainjob_yaml() {
   local train_script_rel="$6"
   local train_config_rel="$7"
 
-  local nvidia_block=""
-  if [[ "${MULTI_GPU_ENV}" == 1 ]]; then
-    nvidia_block="$(cat <<'NVBLOCK'
-      - name: NVIDIA_VISIBLE_DEVICES
-        value: all
-      - name: NCCL_ASYNC_ERROR_HANDLING
-        value: "1"
-NVBLOCK
-)"
-  fi
-
   local device_override_block=""
   if [[ -n "${TRAIN_DEVICE_CONFIG_REL:-}" ]]; then
     device_override_block="$(printf '%s\n' "      - name: TRAIN_DEVICE_CONFIG_REL" "        value: $(yaml_sq "${TRAIN_DEVICE_CONFIG_REL}")")"
   fi
+
+  local trainer_env_block
+  local instance_env_block
+  trainer_env_block="$(emit_trainer_env_yaml)"
+  instance_env_block="$(emit_instance_env_yaml)"
 
   cat <<EOF
 apiVersion: trainer.kubeflow.org/v1alpha1
@@ -289,29 +383,16 @@ spec:
         value: $(yaml_sq "${train_config_rel}")
       - name: GIT_CLONE_DEPTH
         value: $(yaml_sq "${GIT_CLONE_DEPTH}")
-      - name: UV_CACHE_DIR
-        value: /cache/uv
-      - name: HF_HOME
-        value: /cache/hf
-      - name: HF_HUB_CACHE
-        value: /cache/hf/hub
-      - name: HF_DATASETS_CACHE
-        value: /cache/hf/datasets
-      - name: TORCH_HOME
-        value: /cache/torch
-      - name: TORCHINDUCTOR_CACHE_DIR
-        value: /cache/torch/inductor
-      - name: TRITON_CACHE_DIR
-        value: /cache/torch/triton
+${trainer_env_block}
 ${device_override_block}
-${nvidia_block}
+${instance_env_block}
     command:
       - /bin/bash
       - -lc
       - |
         set -euxo pipefail
-        sudo mkdir -p /data /checkpoints /cache/hf /cache/uv /cache/torch
-        sudo chown -R "\$(id -u):\$(id -g)" /data /checkpoints /cache
+        sudo mkdir -p ${BOOTSTRAP_DIRS}
+        sudo chown -R "\$(id -u):\$(id -g)" ${BOOTSTRAP_CHOWN_DIRS}
         exec > >(tee -a /checkpoints/generic-train-bootstrap.log) 2>&1
         set +x
         export WANDB_API_KEY="\$(cat /var/run/secrets/wandb/WANDB_API_KEY)"
@@ -356,7 +437,7 @@ ${nvidia_block}
           - name: dshm
             emptyDir:
               medium: Memory
-              sizeLimit: 8Gi
+              sizeLimit: ${SHARED_MEMORY_SIZE}
           - name: wandb-secret
             secret:
               secretName: wandb-secret
@@ -418,6 +499,7 @@ main() {
     exit 1
   fi
 
+  load_generic_config
   [[ -f "${BOOTSTRAP_LOCAL}" ]] || die "Missing bootstrap script: ${BOOTSTRAP_LOCAL}"
 
   safe_rel_path "${train_script}" "train_script"

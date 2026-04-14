@@ -1,0 +1,17 @@
+description: g6e.xlarge - 4 vCPU, 32Gi RAM, 1x L40S 48GB
+instance_types: g6e.xlarge,g6e.2xlarge
+vcpus: 4
+memory: 32Gi
+gpu_model: L40S
+gpu_memory: 48GB
+nodepool: gpum
+nodetier: gpum
+gpu_request: 1
+gpu_limit: 1
+cpu_request: 4
+cpu_limit: 4
+memory_request: 32Gi
+memory_limit: 32Gi
+shared_memory_size: 16Gi
+multi_gpu_env: 0
+train_act_device_config: train/act/configs/aws_gpus.yaml

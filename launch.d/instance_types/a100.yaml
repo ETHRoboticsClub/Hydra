@@ -1,0 +1,21 @@
+description: p4d.24xlarge - 96 vCPU, 1152Gi RAM, 8x A100 40GB
+instance_type: p4d.24xlarge
+vcpus: 96
+memory: 1152Gi
+gpu_model: A100
+gpu_memory: 320GB
+nodepool: a100-40
+nodetier: a100-40
+gpu_request: 8
+gpu_limit: 8
+cpu_request: 96
+cpu_limit: 96
+memory_request: 1152Gi
+memory_limit: 1152Gi
+shared_memory_size: 576Gi
+multi_gpu_env: 1
+train_act_device_config: train/act/configs/aws_a100.yaml
+
+extra_trainer_env:
+  NVIDIA_VISIBLE_DEVICES: all
+  NCCL_ASYNC_ERROR_HANDLING: 1
