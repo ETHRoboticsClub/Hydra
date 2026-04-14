@@ -110,7 +110,7 @@ for i in range(torch.cuda.device_count()):
 echo "[run.sh] Starting GR00T fine-tuning..."
 
 # GPU monitoring — prints utilization/memory every 30s to stdout (visible in kubectl logs)
-nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv -l 30 &
+# nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv -l 30 &
 NVMON_PID=$!
 
 export NUM_GPUS=4
@@ -125,8 +125,8 @@ uv run python -m torch.distributed.run --nproc_per_node=$NUM_GPUS --master_port=
     --num_gpus $NUM_GPUS \
     --output_dir "${CHECKPOINT_DIR}" \
     --save_total_limit 2 \
-    --save_steps 100 \
-    --max_steps 200 \
+    --save_steps 10000 \
+    --max_steps 20000 \
     --warmup_ratio 0.05 \
     --weight_decay 1e-5 \
     --learning_rate 1e-4 \
