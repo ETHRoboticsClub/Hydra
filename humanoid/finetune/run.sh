@@ -16,7 +16,7 @@ sudo chown -R $(id -u):$(id -g) /data /checkpoints
 
 # Container has CUDA runtime but no toolkit (nvcc). Create a stub nvcc so
 # libraries (deepspeed/transformers) that check for it at import time don't crash.
-export CUDA_HOME="/data/.cuda_stub"
+export CUDA_HOME="/tmp/.cuda_stub"
 mkdir -p "${CUDA_HOME}/bin"
 printf '#!/bin/sh\necho "nvcc: NVIDIA (R) Cuda compiler driver"\necho "Cuda compilation tools, release 12.4, V12.4.131"\n' > "${CUDA_HOME}/bin/nvcc"
 chmod +x "${CUDA_HOME}/bin/nvcc"
@@ -109,10 +109,6 @@ for i in range(torch.cuda.device_count()):
 # ── 5. Train ─────────────────────────────────────────────────────────────────
 echo "[run.sh] Starting GR00T fine-tuning..."
 
-# GPU monitoring — prints utilization/memory every 30s to stdout (visible in kubectl logs)
-# nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv -l 30 &
-NVMON_PID=$!
-
 export NUM_GPUS=4
 
 uv run python -m torch.distributed.run --nproc_per_node=$NUM_GPUS --master_port=29500 \
@@ -133,8 +129,6 @@ uv run python -m torch.distributed.run --nproc_per_node=$NUM_GPUS --master_port=
     --global_batch_size 512 \
     --dataloader_num_workers 6 \
     --color_jitter_params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08
-
-kill $NVMON_PID 2>/dev/null || true
 
 echo "[run.sh] Training complete. Checkpoints saved to ${CHECKPOINT_DIR}."
 
