@@ -162,8 +162,18 @@ delete_mine() {
 
   local selector="app=generic-train,launch.ethrc.github.io/launcher-hash=${launcher_hash_value}"
   local configmap_selector="${selector},launch.ethrc.github.io/managed-by=launch"
+  local jobs
+  jobs="$(kubectl -n "${namespace}" get trainjob -l "${selector}" -o name 2>/dev/null || true)"
 
-  log "Deleting ./launch jobs for ${launcher_id} (${launcher_hash_value}) in namespace ${namespace}"
+  if [[ -z "${jobs}" ]]; then
+    log "No jobs killed."
+    log "No ./launch jobs in namespace ${namespace} are tagged for your current launcher identity:"
+    log "  ${launcher_id} (${launcher_hash_value})"
+    return 0
+  fi
+
+  log "Deleting these ./launch jobs for ${launcher_id} (${launcher_hash_value}) in namespace ${namespace}:"
+  printf '%s\n' "${jobs}" | sed 's#^[^/]*/#  #' >&2
   kubectl -n "${namespace}" delete --ignore-not-found trainjob -l "${selector}"
   kubectl -n "${namespace}" delete --ignore-not-found configmap -l "${configmap_selector}"
 }
