@@ -11,6 +11,7 @@ IMAGE="${LAUNCH_IMAGE:-916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsc
 DATA_PVC="${DATA_PVC:-act-data}"
 CHECKPOINT_PVC="${CHECKPOINT_PVC:-act-checkpoints}"
 CACHE_PVC="${CACHE_PVC:-cache}"
+S3_DATA_PVC="${S3_DATA_PVC:-s3-data}"
 GIT_CLONE_DEPTH="${GIT_CLONE_DEPTH:-1}"
 DRY_RUN="${DRY_RUN:-0}"
 
@@ -29,7 +30,7 @@ Usage:
 
 Environment overrides:
   NAMESPACE, SERVICE_ACCOUNT_NAME, LAUNCH_IMAGE
-  DATA_PVC, CHECKPOINT_PVC, CACHE_PVC
+  DATA_PVC, CHECKPOINT_PVC, CACHE_PVC, S3_DATA_PVC
   GIT_CLONE_DEPTH
   LAUNCH_MEM_REQUEST, LAUNCH_MEM_LIMIT, LAUNCH_CPU_REQUEST, LAUNCH_CPU_LIMIT
   LAUNCH_GPU_REQUEST, LAUNCH_GPU_LIMIT   (override profile GPU counts)
@@ -322,6 +323,9 @@ ${nvidia_block}
           - name: cache
             persistentVolumeClaim:
               claimName: ${CACHE_PVC}
+          - name: s3-data
+            persistentVolumeClaim:
+              claimName: ${S3_DATA_PVC}
           - name: dshm
             emptyDir:
               medium: Memory
@@ -345,6 +349,8 @@ ${nvidia_block}
                 mountPath: /checkpoints
               - name: cache
                 mountPath: /cache
+              - name: s3-data
+                mountPath: /s3
               - name: dshm
                 mountPath: /dev/shm
               - name: wandb-secret
