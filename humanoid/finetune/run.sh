@@ -36,20 +36,40 @@ fi
 # ── 2. Dataset check / download ──────────────────────────────────────────────
 HF_REPO_ID="LucaFrat/PnPCubeLine"
 
+if [ -f /secrets/hf/HF_TOKEN ]; then
+  export HF_TOKEN=$(cat /secrets/hf/HF_TOKEN)
+fi
+export HF_HUB_DOWNLOAD_TIMEOUT=60
+
 if [ -d "${DATASET_LOCAL_PATH}" ] && [ -n "$(ls -A "${DATASET_LOCAL_PATH}" 2>/dev/null)" ]; then
   echo "[run.sh] Dataset found at ${DATASET_LOCAL_PATH}. Skipping download."
 else
   echo "[run.sh] Dataset not found. Downloading from Hugging Face..."
   mkdir -p "${DATASET_LOCAL_PATH}"
-  python -c "
+  for attempt in 1 2 3 4 5; do
+    echo "[run.sh] snapshot_download attempt ${attempt}/5..."
+    if python -c "
+import os
 from huggingface_hub import snapshot_download
 snapshot_download(
     repo_id='${HF_REPO_ID}',
     repo_type='dataset',
     local_dir='${DATASET_LOCAL_PATH}',
+    max_workers=4,
+    token=os.environ.get('HF_TOKEN'),
 )
-"
-  echo "[run.sh] Dataset downloaded from Hugging Face to ${DATASET_LOCAL_PATH}."
+"; then
+      echo "[run.sh] Dataset downloaded from Hugging Face to ${DATASET_LOCAL_PATH}."
+      break
+    fi
+    if [ "${attempt}" = "5" ]; then
+      echo "[run.sh] ERROR: snapshot_download failed after 5 attempts."
+      exit 1
+    fi
+    backoff=$((attempt * 10))
+    echo "[run.sh] Download attempt ${attempt} failed; retrying in ${backoff}s..."
+    sleep "${backoff}"
+  done
 fi
 
 # ── 3. Install uv + Isaac-GR00T ─────────────────────────────────────────────
@@ -119,11 +139,6 @@ kill $NVMON_PID 2>/dev/null || true
 echo "[run.sh] Training complete. Checkpoints saved to ${CHECKPOINT_DIR}."
 
 # ── 6. Upload checkpoints to HuggingFace ────────────────────────────────────
-# Read HF token from mounted secret
-if [ -f /secrets/hf/HF_TOKEN ]; then
-  export HF_TOKEN=$(cat /secrets/hf/HF_TOKEN)
-fi
-
 UPLOAD_OK=false
 if [ -n "${HF_TOKEN:-}" ]; then
   echo "[run.sh] Uploading checkpoints to HuggingFace..."
