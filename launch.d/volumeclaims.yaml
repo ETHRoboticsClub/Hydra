@@ -1,4 +1,33 @@
 apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: s3-robot-learning-cache
+spec:
+  capacity:
+    storage: 128Gi
+  accessModes:
+    - ReadWriteMany
+  mountOptions:
+    - region us-east-1
+    - prefix robot-learning/
+    - allow-delete
+    - allow-overwrite
+    - uid 1000
+    - gid 1000
+    - dir-mode 0775
+    - file-mode 0664
+  csi:
+    driver: s3.csi.aws.com
+    volumeHandle: s3-ethrc-ml-data-916780037007-robot-learning-cache
+    volumeAttributes:
+      bucketName: s3-ethrc-ml-data-916780037007
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""          # static binding — no StorageClass
+  claimRef:                     # optional: lock to a specific PVC
+    namespace: robot-learning
+    name: cache
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: cache
