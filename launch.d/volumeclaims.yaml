@@ -22,10 +22,7 @@ spec:
     volumeAttributes:
       bucketName: s3-ethrc-ml-data-916780037007
   persistentVolumeReclaimPolicy: Retain
-  storageClassName: ""          # static binding — no StorageClass
-  claimRef:                     # optional: lock to a specific PVC
-    namespace: robot-learning
-    name: cache
+  storageClassName: ""
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -35,6 +32,9 @@ metadata:
 spec:
   accessModes:
     - ReadWriteMany
+  storageClassName: ""
+  volumeMode: Filesystem
+  volumeName: s3-robot-learning-cache
   resources:
     requests:
       storage: 20Gi
