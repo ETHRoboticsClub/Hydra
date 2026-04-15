@@ -42,6 +42,10 @@ spec:
         && cd /tmp/hydra/robot-learning/act/run/
         && DATASET_REVISION="${DATASET_REVISION}" bash entrypoint.sh
     numNodes: 1
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
     resourcesPerNode:
       requests:
         cpu: "1"
@@ -70,9 +74,9 @@ spec:
           - name: checkpoints
             persistentVolumeClaim:
               claimName: act-checkpoints
-#          - name: cache
-#            persistentVolumeClaim:
-#              claimName: cache
+          - name: cache
+            persistentVolumeClaim:
+              claimName: cache
           - name: dshm
             emptyDir:
               medium: Memory
@@ -90,8 +94,8 @@ spec:
                 mountPath: /data
               - name: checkpoints
                 mountPath: /checkpoints
-#              - name: cache
-#                mountPath: /cache
+              - name: cache
+                mountPath: /cache
               - name: dshm
                 mountPath: /dev/shm
               - name: wandb-secret

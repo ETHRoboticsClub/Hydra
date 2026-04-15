@@ -8,6 +8,7 @@ spec:
   accessModes:
     - ReadWriteMany
   mountOptions:
+    - allow-other
     - region us-east-1
     - prefix robot-learning/
     - allow-delete
@@ -20,7 +21,7 @@ spec:
     driver: s3.csi.aws.com
     volumeHandle: s3-ethrc-ml-data-916780037007-robot-learning-cache
     volumeAttributes:
-      bucketName: s3-ethrc-ml-data-916780037007
+      bucketName: ethrc-ml-data-916780037007
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
 ---
