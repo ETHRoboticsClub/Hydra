@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: s3-data
+  namespace: humanoid
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: ""
+  volumeMode: Filesystem
+  volumeName: humanoid-s3-data
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: humanoid-s3-data
+spec:
+  accessModes:
+  - ReadWriteMany
+  capacity:
+    storage: 1Gi
+  claimRef:
+    kind: PersistentVolumeClaim
+    name: s3-data
+    namespace: humanoid
+  csi:
+    driver: s3.csi.aws.com
+    volumeAttributes:
+      bucketName: ethrc-ml-data-916780037007
+    volumeHandle: ethrc-ml-data-916780037007-humanoid
+  mountOptions:
+  - region us-east-1
+  - prefix robot-learning/
+  - allow-delete
+  - allow-overwrite
+  - uid 1000
+  - gid 1000
+  - dir-mode 0775
+  - file-mode 0664
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem
