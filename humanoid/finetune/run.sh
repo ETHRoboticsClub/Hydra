@@ -122,7 +122,7 @@ uv run python -m torch.distributed.run --nproc_per_node=$NUM_GPUS --master_port=
     --output_dir "${CHECKPOINT_DIR}" \
     --save_total_limit 3 \
     --save_steps 12 \
-    --max_steps 36 \
+    --max_steps 60 \
     --warmup_ratio 0.05 \
     --weight_decay 1e-5 \
     --learning_rate 1e-4 \
