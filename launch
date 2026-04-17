@@ -428,9 +428,6 @@ ${instance_env_block}
           - name: checkpoints
             persistentVolumeClaim:
               claimName: ${CHECKPOINT_PVC}
-          - name: cache
-            persistentVolumeClaim:
-              claimName: ${CACHE_PVC}
           - name: s3-data
             persistentVolumeClaim:
               claimName: ${S3_DATA_PVC}
@@ -455,8 +452,6 @@ ${instance_env_block}
                 mountPath: /data
               - name: checkpoints
                 mountPath: /checkpoints
-              - name: cache
-                mountPath: /cache
               - name: s3-data
                 mountPath: /s3
               - name: dshm

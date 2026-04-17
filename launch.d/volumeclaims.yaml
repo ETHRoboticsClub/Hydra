@@ -10,7 +10,7 @@ spec:
   mountOptions:
     - allow-other
     - region us-east-1
-    - prefix robot-learning/
+    - prefix robot-learning/cache/
     - allow-delete
     - allow-overwrite
     - uid 1000

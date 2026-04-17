@@ -8,21 +8,21 @@ spec:
     name: torch-distributed
   trainer:
     image: 916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-aa7683b
-    env:
-      - name: UV_CACHE_DIR
-        value: /cache/uv
-      - name: HF_HOME
-        value: /cache/hf
-      - name: HF_HUB_CACHE
-        value: /cache/hf/hub
-      - name: HF_DATASETS_CACHE
-        value: /cache/hf/datasets
-      - name: TORCH_HOME
-        value: /cache/torch
-      - name: TORCHINDUCTOR_CACHE_DIR
-        value: /cache/torch/inductor
-      - name: TRITON_CACHE_DIR
-        value: /cache/torch/triton
+#    env:
+#      - name: UV_CACHE_DIR
+#        value: /cache/uv
+#      - name: HF_HOME
+#        value: /cache/hf
+#      - name: HF_HUB_CACHE
+#        value: /cache/hf/hub
+#      - name: HF_DATASETS_CACHE
+#        value: /cache/hf/datasets
+#      - name: TORCH_HOME
+#        value: /cache/torch
+#      - name: TORCHINDUCTOR_CACHE_DIR
+#        value: /cache/torch/inductor
+#      - name: TRITON_CACHE_DIR
+#        value: /cache/torch/triton
     command:
       - /bin/bash
       - -c
@@ -30,7 +30,7 @@ spec:
         set -euxo pipefail
         && HYDRA_GIT_BRANCH=master
         && DATASET_REVISION=trimmed
-        && sudo mkdir -p /checkpoints/act /cache/hf /cache/uv /cache/torch
+        && sudo mkdir -p /checkpoints/act
         && sudo chown -R "$(id -u):$(id -g)" /data /checkpoints
         && exec > >(tee -a /checkpoints/act/bootstrap.log) 2>&1
         && if [ -d /tmp/hydra/.git ]; then cd /tmp/hydra && git fetch origin "${HYDRA_GIT_BRANCH}" && git reset --hard "origin/${HYDRA_GIT_BRANCH}";
@@ -70,13 +70,10 @@ spec:
           - name: checkpoints
             persistentVolumeClaim:
               claimName: act-checkpoints
-          - name: cache
-            persistentVolumeClaim:
-              claimName: cache
           - name: dshm
             emptyDir:
               medium: Memory
-              sizeLimit: 8Gi
+              sizeLimit: 256Mi
           - name: wandb-secret
             secret:
               secretName: wandb-secret
@@ -85,13 +82,14 @@ spec:
               secretName: hf-secret
         containers:
           - name: node
+            securityContext:
+              runAsUser: 1000
+              runAsGroup: 1000
             volumeMounts:
               - name: data
                 mountPath: /data
               - name: checkpoints
                 mountPath: /checkpoints
-              - name: cache
-                mountPath: /cache
               - name: dshm
                 mountPath: /dev/shm
               - name: wandb-secret
