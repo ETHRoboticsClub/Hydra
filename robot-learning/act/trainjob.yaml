@@ -31,7 +31,7 @@ spec:
         && HYDRA_GIT_BRANCH=master
         && DATASET_REVISION=trimmed
         && sudo mkdir -p /checkpoints/act /cache/hf /cache/uv /cache/torch
-        && sudo chown -R "$(id -u):$(id -g)" /data /checkpoints /cache
+        && sudo chown -R "$(id -u):$(id -g)" /data /checkpoints
         && exec > >(tee -a /checkpoints/act/bootstrap.log) 2>&1
         && if [ -d /tmp/hydra/.git ]; then cd /tmp/hydra && git fetch origin "${HYDRA_GIT_BRANCH}" && git reset --hard "origin/${HYDRA_GIT_BRANCH}";
         else git clone --branch "${HYDRA_GIT_BRANCH}" --single-branch https://github.com/ETHRoboticsClub/Hydra.git /tmp/hydra; fi
