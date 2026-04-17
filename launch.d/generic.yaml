@@ -9,7 +9,7 @@ git_clone_depth: 1
 bootstrap_script: pod-bootstrap.sh
 default_shared_memory_size: 256Mi
 bootstrap_dirs: /data /checkpoints /cache/hf /cache/uv /cache/torch
-bootstrap_chown_dirs: /data /checkpoints /cache
+bootstrap_chown_dirs: /data /checkpoints
 
 trainer_env:
   UV_CACHE_DIR: /cache/uv

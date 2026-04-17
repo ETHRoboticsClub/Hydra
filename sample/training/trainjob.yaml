@@ -43,6 +43,9 @@ spec:
               claimName: testing1-checkpoints
         containers:
           - name: node
+            securityContext:
+              runAsUser: 1000
+              runAsGroup: 1000
             volumeMounts:
               - name: data
                 mountPath: /data
