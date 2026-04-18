@@ -3,7 +3,8 @@ set -euo pipefail
 
 # User-facing configuration
 DATASET_REPO_ID="ETHRC/act-towelspring26_3"
-DATASET_REVISION="${DATASET_REVISION:-main}"
+#DATASET_REVISION="${DATASET_REVISION:-main}"
+DATASET_REVISION="STUBBED"
 CHECKPOINT_DIR="/checkpoints/act_realsense"
 
 # Cache uv packages and venv on persistent storage
@@ -53,7 +54,7 @@ if [ ! -d "${DATA_DIR}" ] || [ -z "$(ls -A "${DATA_DIR}" 2>/dev/null)" ] || [ "$
   mkdir -p "${DATA_DIR}"
   uv run --active --no-sync hf download "${DATASET_REPO_ID}" \
     --repo-type dataset \
-    --revision "${DATASET_REVISION}" \
+    #--revision "${DATASET_REVISION}" \
     --local-dir "${DATA_DIR}"
   printf '%s\n' "${DATASET_REVISION}" > "${DATASET_REVISION_FILE}"
   echo "[entrypoint.sh] Dataset download complete."
