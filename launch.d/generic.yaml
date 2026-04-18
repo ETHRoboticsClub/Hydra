@@ -8,14 +8,5 @@ s3_data_pvc: s3-data
 git_clone_depth: 1
 bootstrap_script: pod-bootstrap.sh
 default_shared_memory_size: 256Mi
-bootstrap_dirs: /data /checkpoints /cache/hf /cache/uv /cache/torch
+bootstrap_dirs: /data /checkpoints
 bootstrap_chown_dirs: /data /checkpoints
-
-trainer_env:
-  UV_CACHE_DIR: /cache/uv
-  HF_HOME: /cache/hf
-  HF_HUB_CACHE: /cache/hf/hub
-  HF_DATASETS_CACHE: /cache/hf/datasets
-  TORCH_HOME: /cache/torch
-  TORCHINDUCTOR_CACHE_DIR: /cache/torch/inductor
-  TRITON_CACHE_DIR: /cache/torch/triton

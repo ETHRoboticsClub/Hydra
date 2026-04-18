@@ -8,21 +8,6 @@ spec:
     name: torch-distributed
   trainer:
     image: 916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-aa7683b
-#    env:
-#      - name: UV_CACHE_DIR
-#        value: /cache/uv
-#      - name: HF_HOME
-#        value: /cache/hf
-#      - name: HF_HUB_CACHE
-#        value: /cache/hf/hub
-#      - name: HF_DATASETS_CACHE
-#        value: /cache/hf/datasets
-#      - name: TORCH_HOME
-#        value: /cache/torch
-#      - name: TORCHINDUCTOR_CACHE_DIR
-#        value: /cache/torch/inductor
-#      - name: TRITON_CACHE_DIR
-#        value: /cache/torch/triton
     command:
       - /bin/bash
       - -c
