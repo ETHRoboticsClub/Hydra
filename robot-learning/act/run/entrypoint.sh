@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # User-facing configuration
-DATASET_REPO_ID="ETHRC/towelspring26_realsense"
+DATASET_REPO_ID="ETHRC/act-towelspring26_3"
 DATASET_REVISION="${DATASET_REVISION:-trimmed}"
 CHECKPOINT_DIR="/checkpoints/act_realsense"
 
