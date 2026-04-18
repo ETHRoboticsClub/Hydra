@@ -53,7 +53,7 @@ if [ ! -d "${DATA_DIR}" ] || [ -z "$(ls -A "${DATA_DIR}" 2>/dev/null)" ] || [ "$
   rm -rf "${DATA_DIR}"
   mkdir -p "${DATA_DIR}"
   uv run --active --no-sync hf download "${DATASET_REPO_ID}" \
-    --repo-type dataset \
+    #--repo-type dataset \
     #--revision "${DATASET_REVISION}" \
     --local-dir "${DATA_DIR}"
   printf '%s\n' "${DATASET_REVISION}" > "${DATASET_REVISION_FILE}"
