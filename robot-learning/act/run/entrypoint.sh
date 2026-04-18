@@ -3,7 +3,7 @@ set -euo pipefail
 
 # User-facing configuration
 DATASET_REPO_ID="ETHRC/act-towelspring26_3"
-DATASET_REVISION="${DATASET_REVISION:-trimmed}"
+DATASET_REVISION="${DATASET_REVISION:main}"
 CHECKPOINT_DIR="/checkpoints/act_realsense"
 
 # Cache uv packages and venv on persistent storage
