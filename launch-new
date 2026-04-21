@@ -1,0 +1,434 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly LAUNCH_D="${SCRIPT_DIR}/launch.d"
+readonly CONFIG="${LAUNCH_D}/generic.yaml"
+readonly PROFILES_D="${LAUNCH_D}/instance_types"
+
+# Default var values (can be overridden via env)
+REPLICAS=1
+GIT_REF=main
+
+die() { echo "[launch-new] $*" >&2; exit 1; }
+
+# -----------------------------------------------------------------------------
+# Config loading (simple awk-based YAML parsing)
+# -----------------------------------------------------------------------------
+
+yval() {
+  awk -v key="$2" '$1 == key ":" {print $2; exit}' "$1"
+}
+
+load_config() {
+  [[ -f "$CONFIG" ]] || die "Missing config: $CONFIG"
+
+  NAMESPACE="${NAMESPACE:-$(yval "$CONFIG" namespace)}"
+  SERVICE_ACCOUNT="${SERVICE_ACCOUNT:-$(yval "$CONFIG" service_account_name)}"
+  IMAGE="${IMAGE_OVERRIDE:-$(yval "$CONFIG" image)}"
+  INIT_IMAGE="${INIT_IMAGE_OVERRIDE:-$IMAGE}"
+
+  DATA_PVC="${DATA_PVC:-$(yval "$CONFIG" data_pvc)}"
+  CHECKPOINT_PVC="${CHECKPOINT_PVC:-$(yval "$CONFIG" checkpoint_pvc)}"
+  S3_PVC="${S3_PVC:-$(yval "$CONFIG" s3_data_pvc)}"
+
+  GIT_DEPTH="${GIT_CLONE_DEPTH:-$(yval "$CONFIG" git_clone_depth)}"
+  SHM_SIZE="${SHM_SIZE:-$(yval "$CONFIG" default_shared_memory_size)}"
+
+  [[ -n "$NAMESPACE" ]] || die "Missing namespace in config"
+  [[ -n "$IMAGE" ]] || die "Missing image in config"
+  [[ -n "$GIT_DEPTH" ]] || GIT_DEPTH=1
+  [[ -n "$SHM_SIZE" ]] || SHM_SIZE="256Mi"
+}
+
+load_profile() {
+  local f="${PROFILES_D}/${1}.yaml"
+  [[ -f "$f" ]] || die "Unknown profile: $1"
+
+  NODEPOOL=$(yval "$f" nodepool)
+  NODETIER=$(yval "$f" nodetier)
+
+  # Use allocatable values if specified (actual usable capacity after k8s overhead)
+  # Otherwise fall back to cpu_limit/memory_limit with a safety buffer
+  local cpu_alloc mem_alloc
+  cpu_alloc=$(yval "$f" cpu_allocatable)
+  mem_alloc=$(yval "$f" memory_allocatable)
+
+  if [[ -n "$cpu_alloc" && -n "$mem_alloc" ]]; then
+    CPU_REQ=$cpu_alloc
+    CPU_LIM=$cpu_alloc
+    MEM_REQ=$mem_alloc
+    MEM_LIM=$mem_alloc
+  else
+    CPU_REQ=$(yval "$f" cpu_request)
+    CPU_LIM=$(yval "$f" cpu_limit)
+    MEM_REQ=$(yval "$f" memory_request)
+    MEM_LIM=$(yval "$f" memory_limit)
+  fi
+
+  GPU_REQ=$(yval "$f" gpu_request)
+  GPU_LIM=$(yval "$f" gpu_limit)
+
+  local shm=$(yval "$f" shared_memory_size)
+  [[ -n "$shm" ]] && SHM_SIZE="$shm"
+
+  MULTI_GPU=$(yval "$f" multi_gpu_env)
+  [[ -n "$MULTI_GPU" ]] || MULTI_GPU=0
+
+  for v in NODEPOOL NODETIER GPU_REQ GPU_LIM; do
+    [[ -n "${!v}" ]] || die "Profile $1 missing: ${v,,}"
+  done
+}
+
+# -----------------------------------------------------------------------------
+# Identity
+# -----------------------------------------------------------------------------
+
+get_launcher_id() {
+  if [[ -n "${LAUNCHER_ID:-}" ]]; then
+    echo "$LAUNCHER_ID"
+  elif command -v aws &>/dev/null && arn=$(aws sts get-caller-identity --query Arn --output text 2>/dev/null); then
+    echo "aws:$arn"
+  else
+    echo "local:${USER:-unknown}@$(hostname -s)"
+  fi
+}
+
+launcher_hash() { echo -n "$1" | shasum -a 256 | cut -c1-16; }
+
+# -----------------------------------------------------------------------------
+# Source handling - supports local folders or git URLs with optional subpath
+# Format: https://github.com/org/repo          (root path)
+#         https://github.com/org/repo/sub/path (subpath)
+#         org/repo/sub/path                    (shorthand with subpath)
+# -----------------------------------------------------------------------------
+
+is_git_url() {
+  # Only accept full URLs with explicit protocols or ssh prefixes
+  # Subfolders specified with @ suffix: https://github.com/org/repo@sub/path
+  [[ "$1" =~ ^(https?://|git@|ssh://) ]]
+}
+
+# Parse git source into: repo_url, subpath
+# Input:  https://github.com/org/repo@sub/path  (subpath after @)
+# Output: repo_url=https://github.com/org/repo.git, subpath=sub/path
+parse_git_source() {
+  local src="$1"
+  local repo_url subpath
+
+  # Extract subpath from @ suffix if present
+  if [[ "$src" =~ @(.+)$ ]]; then
+    subpath="${BASH_REMATCH[1]}"
+    src="${src%%@*}"  # Remove @ and everything after
+  fi
+
+  # Handle full HTTPS URLs
+  if [[ "$src" =~ ^https?://github.com/([^/]+)/([^/]+)/?$ ]]; then
+    repo_url="https://github.com/${BASH_REMATCH[1]}/${BASH_REMATCH[2]}.git"
+  elif [[ "$src" =~ ^https?://([^/]+)/([^/]+)/([^/]+)/?$ ]]; then
+    # Other git hosts: https://gitlab.com/org/repo
+    local host="${BASH_REMATCH[1]}"
+    repo_url="https://${host}/${BASH_REMATCH[2]}/${BASH_REMATCH[3]}.git"
+  elif [[ "$src" =~ ^git@([^:]+):([^/]+)/([^/]+)/?$ ]]; then
+    # SSH: git@github.com:org/repo
+    repo_url="$src"
+  elif [[ "$src" =~ ^ssh:// ]]; then
+    # SSH protocol URL
+    repo_url="$src"
+  else
+    die "Cannot parse git URL: $1 (use full https://, git@, or ssh:// URL)"
+  fi
+
+  [[ -n "$repo_url" ]] || die "Cannot parse git URL: $1"
+
+  echo "$repo_url"
+  [[ -n "$subpath" ]] && echo "$subpath"
+}
+
+validate_folder() {
+  [[ -d "$1" ]] || die "Not a directory: $1"
+  [[ -f "$1/entrypoint.sh" ]] || die "Missing entrypoint.sh in $1"
+  [[ -f "$1/deploy.yaml" ]] || die "Missing deploy.yaml in $1 (folder must contain deploy.yaml spec)"
+}
+
+# Clone repo and return path to deploy.yaml (handles subpaths)
+fetch_deploy_yaml() {
+  local src="$1"
+  if is_git_url "$src"; then
+    local parts=($(parse_git_source "$src"))
+    local repo_url=${parts[0]}
+    local subpath=${parts[1]:-}
+
+    local tmpdir=$(mktemp -d)
+    git clone --depth 1 --branch "$GIT_REF" "$repo_url" "$tmpdir" 2>/dev/null || die "Failed to clone: $repo_url"
+
+    if [[ -n "$subpath" ]]; then
+      [[ -d "$tmpdir/$subpath" ]] || die "Subpath not found in repo: $subpath"
+      [[ -f "$tmpdir/$subpath/deploy.yaml" ]] || die "No deploy.yaml in subpath: $subpath"
+      echo "$tmpdir/$subpath/deploy.yaml"
+      # Store subpath for later use in init script
+      GIT_SUBPATH="$subpath"
+    else
+      [[ -f "$tmpdir/deploy.yaml" ]] || die "Cloned repo missing deploy.yaml"
+      echo "$tmpdir/deploy.yaml"
+      GIT_SUBPATH=""
+    fi
+    # Store temp dir for cleanup
+    GIT_TMPDIR="$tmpdir"
+  else
+    validate_folder "$src"
+    echo "$src/deploy.yaml"
+    GIT_TMPDIR=""
+    GIT_SUBPATH=""
+  fi
+}
+
+# -----------------------------------------------------------------------------
+# Script generation for initContainer
+# -----------------------------------------------------------------------------
+
+make_init_local() {
+  cat <<'EOF'
+set -euxo pipefail
+mkdir -p /workspace
+cp /job-files/entrypoint.sh /workspace/
+chmod +x /workspace/entrypoint.sh
+EOF
+  [[ -f "$1/init.sh" ]] && cat "$1/init.sh"
+}
+
+make_init_git() {
+  local repo_url="$1"
+  local subpath="${2:-}"
+
+  cat <<EOF
+set -euxo pipefail
+rm -rf /workspace
+git clone --depth $GIT_DEPTH --branch "$GIT_REF" "$repo_url" /workspace
+EOF
+  if [[ -n "$subpath" ]]; then
+    cat <<EOF
+# Verify subpath exists and cd into it
+[[ -d "/workspace/$subpath" ]] || { echo "Subpath not found: $subpath"; exit 1; }
+# Move contents of subpath to root of workspace
+shopt -s dotglob
+mv /workspace/$subpath/* /workspace/
+shopt -u dotglob
+EOF
+  fi
+}
+
+# -----------------------------------------------------------------------------
+# Variable substitution into deploy.yaml
+# -----------------------------------------------------------------------------
+
+substitute_template() {
+  local tpl="$1"
+  local init_content
+  local init_escaped
+  local tmp_init
+  local launcher_id_escaped
+  local tmp_out
+
+  # Read init script content
+  if [[ "$IS_GIT" == 1 ]]; then
+    init_content=$(make_init_git "$GIT_REPO_URL" "$GIT_SUBPATH") || true
+  else
+    init_content=$(make_init_local "$SOURCE") || true
+  fi
+
+  # YAML-escape the init script (16 spaces indent for podTemplateOverrides)
+  init_escaped=$(echo "$init_content" | sed 's/^/                /') || true
+
+  # Create a temporary file for the init script to handle multiline properly
+  tmp_init=$(mktemp)
+  echo "$init_escaped" > "$tmp_init"
+
+  # Get launcher_id and escape it for sed
+  launcher_id_escaped=$(get_launcher_id | sed 's/[&/\]/\\&/g') || true
+
+  # Substitute simple variables first (avoiding special characters)
+  # Note: Using a temp file for output to avoid pipefail issues with awk
+  local tmp_out=$(mktemp)
+
+  sed \
+    -e "s|{{JOB_NAME}}|$JOB_NAME|g" \
+    -e "s|{{NAMESPACE}}|$NAMESPACE|g" \
+    -e "s|{{PROFILE}}|$PROFILE|g" \
+    -e "s|{{LAUNCHER_ID}}|$launcher_id_escaped|g" \
+    -e "s|{{LAUNCHER_HASH}}|$LAUNCHER_HASH|g" \
+    -e "s|{{USER}}|${USER:-unknown}|g" \
+    -e "s|{{SERVICE_ACCOUNT}}|$SERVICE_ACCOUNT|g" \
+    -e "s|{{NODEPOOL}}|$NODEPOOL|g" \
+    -e "s|{{NODETIER}}|$NODETIER|g" \
+    -e "s|{{IMAGE}}|$IMAGE|g" \
+    -e "s|{{INIT_IMAGE}}|$INIT_IMAGE|g" \
+    -e "s|{{CPU_REQUEST}}|$CPU_REQ|g" \
+    -e "s|{{CPU_LIMIT}}|$CPU_LIM|g" \
+    -e "s|{{CPU_BUFFER_LIMIT}}|$CPU_BUFFER_LIMIT|g" \
+    -e "s|{{MEM_REQUEST}}|$MEM_REQ|g" \
+    -e "s|{{MEM_LIMIT}}|$MEM_LIM|g" \
+    -e "s|{{MEM_BUFFER_LIMIT}}|$MEM_BUFFER_LIMIT|g" \
+    -e "s|{{GPU_REQUEST}}|$GPU_REQ|g" \
+    -e "s|{{GPU_LIMIT}}|$GPU_LIM|g" \
+    -e "s|{{DATA_PVC}}|$DATA_PVC|g" \
+    -e "s|{{CHECKPOINT_PVC}}|$CHECKPOINT_PVC|g" \
+    -e "s|{{S3_PVC}}|$S3_PVC|g" \
+    -e "s|{{SHM_SIZE}}|$SHM_SIZE|g" \
+    -e "s|{{REPLICAS}}|$REPLICAS|g" \
+    -e "s|{{CONFIGMAP_NAME}}|${JOB_NAME}-files|g" \
+    -e "s|{{ENTRYPOINT_PATH}}|/workspace/entrypoint.sh|g" \
+    "$tpl" > "$tmp_out" || { echo "[launch-new] sed substitution failed" >&2; rm -f "$tmp_init" "$tmp_out"; return 1; }
+
+  # Now handle the multiline INIT_SCRIPT substitution
+  awk -v init_file="$tmp_init" '
+    /{{INIT_SCRIPT}}/ {
+      while ((getline line < init_file) > 0) {
+        print line
+      }
+      close(init_file)
+      next
+    }
+    { print }
+  ' "$tmp_out" || { echo "[launch-new] awk substitution failed" >&2; rm -f "$tmp_init" "$tmp_out"; return 1; }
+
+  rm -f "$tmp_init" "$tmp_out"
+}
+
+# -----------------------------------------------------------------------------
+# ConfigMap creation for local folders
+# -----------------------------------------------------------------------------
+
+create_configmap() {
+  local name="$1" dir="$2"
+  local args=("--from-file=entrypoint.sh=${dir}/entrypoint.sh")
+  [[ -f "${dir}/init.sh" ]] && args+=("--from-file=init.sh=${dir}/init.sh")
+
+  kubectl create configmap "${name}-files" -n "$NAMESPACE" "${args[@]}" --dry-run=client -o yaml | kubectl apply -f -
+
+  kubectl label -n "$NAMESPACE" configmap "${name}-files" \
+    ethrobotics.ch/managed-by=launch \
+    ethrobotics.ch/job-name="$name" \
+    ethrobotics.ch/launcher-hash="$LAUNCHER_HASH" \
+    --overwrite
+
+  kubectl annotate -n "$NAMESPACE" configmap "${name}-files" \
+    ethrobotics.ch/launcher="$(get_launcher_id)" \
+    ethrobotics.ch/user="${USER:-unknown}" \
+    --overwrite
+}
+
+# -----------------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------------
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: ./launch-new [--dry-run] <instancetype> <folder>
+
+  instancetype: gpus, gpul, gpum, a100, a100-80
+  folder:       Local path or full git URL (with optional @subpath)
+
+Git URL formats (full URLs only, no shorthand):
+  https://github.com/org/repo
+  https://github.com/org/repo@sub/path      (uses deploy.yaml from subpath)
+  git@github.com:org/repo
+  git@github.com:org/repo@sub/path
+
+Local paths:
+  ./my-job-folder
+  ../deployments/act
+  /absolute/path/to/job
+
+Environment:
+  IMAGE_OVERRIDE      Override main image
+  INIT_IMAGE_OVERRIDE Override init image
+  NAMESPACE           Override namespace
+  DRY_RUN             Print manifest only
+  LAUNCHER_ID         Override launcher identity
+  GIT_REF             Git branch/tag (default: main)
+
+Examples:
+  ./launch-new gpul https://github.com/org/repo
+  ./launch-new gpul https://github.com/org/repo@jobs/training
+  ./launch-new gpus ./my-job-folder
+EOF
+}
+
+main() {
+  [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && { usage; exit 0; }
+  [[ "${1:-}" == "--list-profiles" ]] && { ls "$PROFILES_D"/*.yaml 2>/dev/null | xargs -n1 basename -s .yaml; exit 0; }
+
+  local dry_run=0
+  [[ "${1:-}" == "--dry-run" ]] && { dry_run=1; shift; }
+
+  [[ $# -eq 2 ]] || { usage; exit 1; }
+
+  PROFILE="$1"
+  SOURCE="$2"
+
+  load_config
+  load_profile "$PROFILE"
+
+  # Buffer limits are now set from profile's allocatable values (if specified)
+  CPU_BUFFER_LIMIT=$CPU_REQ
+  MEM_BUFFER_LIMIT=$MEM_REQ
+
+  JOB_NAME="launch-new-$(date +%Y%m%d-%H%M%S)"
+  LAUNCHER_HASH=$(launcher_hash "$(get_launcher_id)")
+
+  # Determine if git or local, parse git source
+  IS_GIT=0
+  GIT_REPO_URL=""
+  GIT_SUBPATH=""
+  GIT_TMPDIR=""
+
+  if is_git_url "$SOURCE"; then
+    IS_GIT=1
+    local parsed=($(parse_git_source "$SOURCE"))
+    GIT_REPO_URL=${parsed[0]}
+    GIT_SUBPATH=${parsed[1]:-}
+  fi
+
+  echo "[launch-new] Job: $JOB_NAME"
+  echo "[launch-new] Profile: $PROFILE (nodepool=$NODEPOOL, gpu=$GPU_REQ)"
+  if [[ $IS_GIT == 1 ]]; then
+    if [[ -n "$GIT_SUBPATH" ]]; then
+      echo "[launch-new] Git: $GIT_REPO_URL (subpath: $GIT_SUBPATH)"
+    else
+      echo "[launch-new] Git: $GIT_REPO_URL"
+    fi
+  else
+    echo "[launch-new] Local: $SOURCE"
+  fi
+
+  # Fetch deploy.yaml (clone if needed for git URLs)
+  local template_file
+  if [[ $IS_GIT == 1 ]]; then
+    template_file=$(fetch_deploy_yaml "$SOURCE")
+    # GIT_TMPDIR and GIT_SUBPATH are now set by fetch_deploy_yaml
+  else
+    validate_folder "$SOURCE"
+    template_file="$SOURCE/deploy.yaml"
+  fi
+
+  # Substitute and output
+  if [[ $dry_run == 1 ]]; then
+    substitute_template "$template_file"
+    [[ -n "$GIT_TMPDIR" ]] && rm -rf "$GIT_TMPDIR"
+    exit 0
+  fi
+
+  # Create ConfigMap for local sources (contains entrypoint.sh and optional init.sh)
+  [[ $IS_GIT == 0 ]] && create_configmap "$JOB_NAME" "$SOURCE"
+
+  # Apply manifest
+  substitute_template "$template_file" | kubectl apply -f -
+
+  # Cleanup temp clone if we made one
+  [[ -n "$GIT_TMPDIR" ]] && rm -rf "$GIT_TMPDIR"
+
+  echo "[launch-new] Applied. Kill with: ./kill-new $JOB_NAME"
+}
+
+main "$@"

@@ -1,0 +1,15 @@
+[project]
+name = "act-training"
+version = "0.1.0"
+description = "ACT (Action Chunking with Transformers) training using lerobot"
+requires-python = ">=3.12"
+dependencies = [
+    "lerobot",
+    "huggingface-hub",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+]

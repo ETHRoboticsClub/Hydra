@@ -1,0 +1,124 @@
+# Job spec template for ACT training
+# Variables in {{BRACKETS}} will be substituted by launch-new
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{JOB_NAME}}
+  namespace: {{NAMESPACE}}
+  labels:
+    app: {{JOB_NAME}}
+    ethrobotics.ch/managed-by: launch
+    ethrobotics.ch/job-name: {{JOB_NAME}}
+    ethrobotics.ch/profile: {{PROFILE}}
+    ethrobotics.ch/launcher-hash: {{LAUNCHER_HASH}}
+  annotations:
+    ethrobotics.ch/launcher: '{{LAUNCHER_ID}}'
+    ethrobotics.ch/user: '{{USER}}'
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{JOB_NAME}}
+        ethrobotics.ch/job-name: {{JOB_NAME}}
+      annotations:
+        ethrobotics.ch/launcher: '{{LAUNCHER_ID}}'
+        ethrobotics.ch/user: '{{USER}}'
+    spec:
+      serviceAccountName: {{SERVICE_ACCOUNT}}
+      nodeSelector:
+        karpenter.sh/nodepool: {{NODEPOOL}}
+        node-tier: {{NODETIER}}
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      restartPolicy: Never
+      initContainers:
+        - name: init
+          image: {{INIT_IMAGE}}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+{{INIT_SCRIPT}}
+          resources:
+            requests:
+              cpu: "{{CPU_REQUEST}}"
+              memory: "{{MEM_REQUEST}}"
+              nvidia.com/gpu: "{{GPU_REQUEST}}"
+            limits:
+              cpu: "{{CPU_BUFFER_LIMIT}}"
+              memory: "{{MEM_BUFFER_LIMIT}}"
+              nvidia.com/gpu: "{{GPU_LIMIT}}"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: data
+              mountPath: /data
+            - name: checkpoints
+              mountPath: /checkpoints
+            - name: job-files
+              mountPath: /job-files
+              readOnly: true
+      containers:
+        - name: main
+          image: {{IMAGE}}
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euxo pipefail
+              export WANDB_API_KEY="$(cat /var/run/secrets/wandb/WANDB_API_KEY 2>/dev/null || echo '')"
+              export HF_TOKEN="$(cat /var/run/secrets/hf/HF_TOKEN 2>/dev/null || echo '')"
+              cd /workspace && ./entrypoint.sh
+          resources:
+            requests:
+              cpu: "{{CPU_REQUEST}}"
+              memory: "{{MEM_REQUEST}}"
+              nvidia.com/gpu: "{{GPU_REQUEST}}"
+            limits:
+              cpu: "{{CPU_BUFFER_LIMIT}}"
+              memory: "{{MEM_BUFFER_LIMIT}}"
+              nvidia.com/gpu: "{{GPU_LIMIT}}"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: data
+              mountPath: /data
+            - name: checkpoints
+              mountPath: /checkpoints
+            - name: s3-data
+              mountPath: /s3
+            - name: dshm
+              mountPath: /dev/shm
+            - name: wandb-secret
+              mountPath: /var/run/secrets/wandb
+              readOnly: true
+            - name: hf-secret
+              mountPath: /var/run/secrets/hf
+              readOnly: true
+      volumes:
+        - name: workspace
+          emptyDir: {}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{DATA_PVC}}
+        - name: checkpoints
+          persistentVolumeClaim:
+            claimName: {{CHECKPOINT_PVC}}
+        - name: s3-data
+          persistentVolumeClaim:
+            claimName: {{S3_PVC}}
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+        - name: wandb-secret
+          secret:
+            secretName: wandb-secret
+        - name: hf-secret
+          secret:
+            secretName: hf-secret
+        - name: job-files
+          configMap:
+            name: {{CONFIGMAP_NAME}}
+            defaultMode: 0755

@@ -2,16 +2,15 @@ description: p4de.24xlarge - 96 vCPU, 1152Gi RAM, 8x A100 80GB
 instance_type: p4de.24xlarge
 vcpus: 96
 memory: 1152Gi
+# Actual allocatable after k8s system reservations (estimated, update if observed)
+cpu_allocatable: 90
+memory_allocatable: 1100Gi
 gpu_model: A100
 gpu_memory: 640GB
 nodepool: a100-80
 nodetier: a100-80
 gpu_request: 8
 gpu_limit: 8
-cpu_request: 96
-cpu_limit: 96
-memory_request: 1152Gi
-memory_limit: 1152Gi
 shared_memory_size: 576Gi
 multi_gpu_env: 1
 train_act_device_config: train/act/configs/aws_a100.yaml

@@ -1,0 +1,1502 @@
+#!/usr/bin/env python3
+"""
+Interactive TUI for creating Kubernetes resources (PVCs, Deployments, TrainJobs, interactive sessions).
+
+Run with: uv run ./hydra
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+from typing import Optional
+
+try:
+    from textual.app import App, ComposeResult
+    from textual.containers import Container, Horizontal, Vertical
+    from textual.widgets import (
+        Button,
+        Header,
+        Footer,
+        Label,
+        Input,
+        Select,
+        RadioSet,
+        RadioButton,
+        Checkbox,
+        Static,
+        TextArea,
+        ListView,
+        ListItem,
+    )
+    from textual.screen import Screen
+    from textual.reactive import reactive
+    from rich.syntax import Syntax
+    from rich.panel import Panel
+    from rich.text import Text
+except ImportError:
+    print("Error: Required dependencies not found.")
+    print("Install with: pip install textual rich")
+    sys.exit(1)
+
+# Configuration
+DOTFILE_NAME = ".new-config"
+SCRIPT_DIR = Path(__file__).parent.resolve()
+LAUNCH_D = SCRIPT_DIR / "launch.d"
+TEMPLATES_DIR = LAUNCH_D / "templates"
+PROFILES_DIR = LAUNCH_D / "instance_types"
+GENERIC_CONFIG = LAUNCH_D / "generic.yaml"
+
+
+def run_kubectl(args: list[str], capture_output: bool = True) -> tuple[int, str, str]:
+    """Run kubectl command and return (returncode, stdout, stderr)."""
+    cmd = ["kubectl"] + args
+    result = subprocess.run(cmd, capture_output=capture_output, text=True)
+    return result.returncode, result.stdout, result.stderr
+
+
+def get_namespaces() -> list[str]:
+    """Fetch available namespaces from kubectl."""
+    rc, stdout, _ = run_kubectl(["get", "namespaces", "-o", "json"])
+    if rc != 0:
+        return []
+    try:
+        data = json.loads(stdout)
+        return [item["metadata"]["name"] for item in data.get("items", [])]
+    except (json.JSONDecodeError, KeyError):
+        return []
+
+
+def get_pvcs(namespace: str) -> list[dict]:
+    """Fetch PVCs from the specified namespace."""
+    rc, stdout, _ = run_kubectl(["get", "pvc", "-n", namespace, "-o", "json"])
+    if rc != 0:
+        return []
+    try:
+        data = json.loads(stdout)
+        pvcs = []
+        for item in data.get("items", []):
+            pvcs.append({
+                "name": item["metadata"]["name"],
+                "storage": item["spec"].get("resources", {}).get("requests", {}).get("storage", "?"),
+                "access_modes": item["spec"].get("accessModes", []),
+                "status": item["status"].get("phase", "?"),
+            })
+        return pvcs
+    except (json.JSONDecodeError, KeyError):
+        return []
+
+
+def get_storage_classes() -> list[tuple[str, str]]:
+    """Fetch available storage classes from kubectl."""
+    rc, stdout, _ = run_kubectl(["get", "sc", "-o", "json"])
+    if rc != 0:
+        return []
+    try:
+        data = json.loads(stdout)
+        storage_classes = []
+        for item in data.get("items", []):
+            name = item["metadata"]["name"]
+            provisioner = item.get("provisioner", "unknown")
+            is_default = "(default)" if item.get("metadata", {}).get("annotations", {}).get("storageclass.kubernetes.io/is-default-class") == "true" else ""
+            display = f"{name} - {provisioner} {is_default}".strip()
+            storage_classes.append((display, name))
+        return storage_classes
+    except (json.JSONDecodeError, KeyError):
+        return []
+
+
+def load_dotfile() -> dict:
+    """Load saved configuration from dotfile."""
+    dotfile = SCRIPT_DIR / DOTFILE_NAME
+    if dotfile.exists():
+        try:
+            with open(dotfile) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            pass
+    return {}
+
+
+def save_dotfile(config: dict) -> None:
+    """Save configuration to dotfile."""
+    dotfile = SCRIPT_DIR / DOTFILE_NAME
+    try:
+        with open(dotfile, "w") as f:
+            json.dump(config, f, indent=2)
+    except IOError as e:
+        print(f"Warning: Could not save config: {e}")
+
+
+def yaml_value(file_path: Path, key: str) -> Optional[str]:
+    """Simple YAML value extraction."""
+    if not file_path.exists():
+        return None
+    with open(file_path) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith(f"{key}:"):
+                return line.split(":", 1)[1].strip()
+    return None
+
+
+def get_profiles() -> list[tuple[str, str]]:
+    """Get available instance type profiles."""
+    profiles = []
+    if PROFILES_DIR.exists():
+        for f in sorted(PROFILES_DIR.glob("*.yaml")):
+            name = f.stem
+            desc = yaml_value(f, "description") or "No description"
+            profiles.append((name, desc))
+    return profiles
+
+
+def get_nodetiers() -> list[tuple[str, str, dict]]:
+    """Get node tiers from cluster with their resource profiles.
+    Returns list of (display_name, tier_name, resources_dict).
+    """
+    # First try to get from cluster node labels
+    rc, stdout, _ = run_kubectl(["get", "nodes", "-o", "json"])
+    tiers = {}
+
+    if rc == 0:
+        try:
+            data = json.loads(stdout)
+            for node in data.get("items", []):
+                labels = node.get("metadata", {}).get("labels", {})
+                tier = labels.get("node-tier", "")
+                if tier:
+                    # Get allocatable resources
+                    allocatable = node.get("status", {}).get("allocatable", {})
+                    if tier not in tiers:
+                        tiers[tier] = {
+                            "count": 0,
+                            "cpus": [],
+                            "memory": [],
+                            "gpus": [],
+                        }
+                    tiers[tier]["count"] += 1
+                    tiers[tier]["cpus"].append(allocatable.get("cpu", "0"))
+                    tiers[tier]["memory"].append(allocatable.get("memory", "0"))
+                    tiers[tier]["gpus"].append(allocatable.get("nvidia.com/gpu", "0"))
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    result = []
+    # Add "none" option for CPU-only workloads
+    result.append((
+        "none (CPU only - no GPU)",
+        "none",
+        {"cpu_request": "1", "cpu_limit": "4", "mem_request": "4Gi", "mem_limit": "16Gi", "gpu_request": "0", "gpu_limit": "0"}
+    ))
+
+    # Add discovered tiers from cluster
+    for tier, info in sorted(tiers.items()):
+        # Use max resources as limits
+        max_cpu = max([int(c.replace("m", "")) // 1000 if "m" in c else int(c) for c in info["cpus"]]) if info["cpus"] else 4
+        max_mem = max([int(m.replace("Ki", "")) // (1024*1024) if "Ki" in m else int(m.replace("Gi", "").replace("Mi", "") // 1024 if "Mi" in m else int(m)) for m in info["memory"]]) if info["memory"] else 16
+        has_gpu = any(int(g) > 0 for g in info["gpus"] if g.isdigit())
+
+        display = f"{tier} ({info['count']} nodes, ~{max_cpu} CPU, ~{max_mem}Gi RAM"
+        if has_gpu:
+            max_gpu = max([int(g) for g in info["gpus"] if g.isdigit()])
+            display += f", up to {max_gpu} GPU"
+        display += ")"
+
+        resources = {
+            "cpu_request": str(max_cpu // 2),
+            "cpu_limit": str(max_cpu),
+            "mem_request": f"{max_mem // 2}Gi",
+            "mem_limit": f"{max_mem}Gi",
+            "gpu_request": "1" if has_gpu else "0",
+            "gpu_limit": str(max([int(g) for g in info["gpus"] if g.isdigit()])) if has_gpu else "0",
+        }
+        result.append((display, tier, resources))
+
+    # Fallback: if no tiers discovered, add some defaults from profiles
+    if len(result) <= 1:
+        for profile_name, desc in get_profiles():
+            profile_path = PROFILES_DIR / f"{profile_name}.yaml"
+            tier = yaml_value(profile_path, "nodetier")
+            if tier and tier not in [t[1] for t in result]:
+                resources = {
+                    "cpu_request": yaml_value(profile_path, "cpu_request") or "2",
+                    "cpu_limit": yaml_value(profile_path, "cpu_limit") or "4",
+                    "mem_request": yaml_value(profile_path, "memory_request") or "8Gi",
+                    "mem_limit": yaml_value(profile_path, "memory_limit") or "16Gi",
+                    "gpu_request": yaml_value(profile_path, "gpu_request") or "0",
+                    "gpu_limit": yaml_value(profile_path, "gpu_limit") or "0",
+                }
+                result.append((f"{tier} (from {profile_name} profile)", tier, resources))
+
+    return result
+
+
+def get_default_config() -> dict:
+    """Load default values from generic.yaml."""
+    defaults = {
+        "namespace": "default",
+        "image": "ubuntu:22.04",
+        "data_pvc": "data",
+        "checkpoint_pvc": "checkpoints",
+        "s3_data_pvc": "s3-data",
+        "service_account_name": "default",
+    }
+    if GENERIC_CONFIG.exists():
+        for key in defaults:
+            val = yaml_value(GENERIC_CONFIG, key)
+            if val:
+                defaults[key] = val
+    return defaults
+
+
+class NamespaceScreen(Screen):
+    """Screen for selecting namespace on first run."""
+
+    BINDINGS = [("q", "exit", "Quit"), ("enter", "select", "Select")]
+
+    def action_exit(self):
+        self.app.exit()
+
+    def __init__(self):
+        self.namespaces = get_namespaces()
+        self.selected_namespace = None
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield Container(
+            Label("Select Kubernetes Namespace", classes="title"),
+            Label("This will be saved and used as the default for future runs."),
+            ListView(
+                *[ListItem(Label(f"  {ns}"), id=f"ns-{ns}") for ns in self.namespaces] if self.namespaces else [ListItem(Label("  (no namespaces found - check kubectl connection)"), id="ns-none")],
+                id="namespace-list"
+            ),
+            Input(placeholder="Or type a namespace manually...", id="manual-namespace"),
+            Horizontal(
+                Button("Save & Continue", variant="primary", id="save-btn"),
+                Button("Quit", variant="error", id="quit-btn"),
+            ),
+            id="namespace-container"
+        )
+        yield Footer()
+
+    def on_mount(self):
+        if self.namespaces:
+            self.query_one("#namespace-list", ListView).index = 0
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "quit-btn":
+            self.app.exit()
+        elif event.button.id == "save-btn":
+            manual = self.query_one("#manual-namespace", Input).value
+            list_view = self.query_one("#namespace-list", ListView)
+            if manual.strip():
+                self.selected_namespace = manual.strip()
+            elif list_view.highlighted_child and self.namespaces:
+                # Get namespace by index
+                idx = list_view.index
+                if 0 <= idx < len(self.namespaces):
+                    self.selected_namespace = self.namespaces[idx]
+            if self.selected_namespace:
+                self.dismiss(self.selected_namespace)
+
+    def action_select(self):
+        self.on_button_pressed(Button.Pressed(self.query_one("#save-btn")))
+
+
+class MainMenuScreen(Screen):
+    """Main menu screen."""
+
+    BINDINGS = [
+        ("q", "exit", "Quit"),
+        ("1", "new_pvc", "New PVC"),
+        ("2", "new_deployment", "New Deployment/TrainJob"),
+        ("3", "interactive", "Interactive Session"),
+        ("n", "change_namespace", "Change Namespace"),
+    ]
+
+    def action_exit(self):
+        self.app.exit()
+
+    namespace = reactive("default")
+
+    def __init__(self, namespace: str = "default"):
+        self.start_namespace = namespace
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield Container(
+            Label("Kubernetes Resource Creator", classes="title"),
+            Label(f"Current namespace: [bold]{self.start_namespace}[/bold]", id="ns-label"),
+            Static(""),
+            Label("Select an action:"),
+            Horizontal(
+                Button("1. New PVC", id="btn-pvc", variant="primary"),
+                Button("2. New Deployment/TrainJob", id="btn-deploy", variant="primary"),
+                Button("3. Interactive Session", id="btn-interactive", variant="primary"),
+            ),
+            Static(""),
+            Horizontal(
+                Button("Change Namespace", id="btn-ns", variant="default"),
+                Button("Quit", id="btn-quit", variant="error"),
+            ),
+            id="main-container"
+        )
+        yield Footer()
+
+    def on_mount(self):
+        self.namespace = self.start_namespace
+        self.update_ns_label()
+
+    def watch_namespace(self):
+        self.update_ns_label()
+
+    def update_ns_label(self):
+        label = self.query_one("#ns-label", Label)
+        label.update(f"Current namespace: [bold]{self.namespace}[/bold]")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn_id = event.button.id
+        if btn_id == "btn-quit":
+            self.app.exit()
+        elif btn_id == "btn-pvc":
+            self.action_new_pvc()
+        elif btn_id == "btn-deploy":
+            self.action_new_deployment()
+        elif btn_id == "btn-interactive":
+            self.action_interactive()
+        elif btn_id == "btn-ns":
+            self.action_change_namespace()
+
+    def action_new_pvc(self):
+        self.app.push_screen(PVCScreen(self.namespace))
+
+    def action_new_deployment(self):
+        self.app.push_screen(DeploymentScreen(self.namespace))
+
+    def action_interactive(self):
+        self.app.push_screen(InteractiveScreen(self.namespace))
+
+    def action_change_namespace(self):
+        def on_namespace_change(new_ns: str | None):
+            if new_ns:
+                self.namespace = new_ns
+                save_dotfile({"namespace": new_ns})
+                self.notify(f"Namespace changed to: {new_ns}")
+
+        self.app.push_screen(NamespaceScreen(), callback=on_namespace_change)
+
+
+class PVCScreen(Screen):
+    """Screen for creating a new PVC."""
+
+    BINDINGS = [("q", "back", "Back"), ("escape", "back", "Back")]
+
+    def __init__(self, namespace: str):
+        self.namespace = namespace
+        self.storage_classes = []
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield Container(
+            Label(f"New PVC (namespace: {self.namespace})", classes="title"),
+            Label("PVC Name:"),
+            Input(placeholder="my-data-pvc", id="pvc-name"),
+            Label("Storage Size:"),
+            Input(placeholder="10Gi", value="10Gi", id="pvc-size"),
+            Label("Access Mode:"),
+            Select(
+                [("ReadWriteOnce", "ReadWriteOnce"), ("ReadWriteMany", "ReadWriteMany"), ("ReadOnlyMany", "ReadOnlyMany")],
+                value="ReadWriteOnce",
+                id="pvc-access"
+            ),
+            Label("Storage Class:"),
+            Select(
+                [("Loading...", "")],
+                value="",
+                id="pvc-storage-class"
+            ),
+            Label("Output configuration to:"),
+            Input(placeholder="./pvc-manifests", value=".", id="pvc-folder"),
+            Static(""),
+            Horizontal(
+                Button("Generate", variant="primary", id="generate-btn"),
+                Button("Back", variant="default", id="back-btn"),
+            ),
+            id="pvc-container"
+        )
+        yield Footer()
+
+    def on_mount(self):
+        # Load storage classes asynchronously
+        self.run_worker(self._load_storage_classes())
+
+    async def _load_storage_classes(self):
+        """Load storage classes in background."""
+        import asyncio
+        # Run the blocking kubectl call in a thread
+        loop = asyncio.get_event_loop()
+        self.storage_classes = await loop.run_in_executor(None, get_storage_classes)
+
+        # Update the select widget
+        sc_select = self.query_one("#pvc-storage-class", Select)
+        if self.storage_classes:
+            # Find default
+            default_sc = None
+            for display, name in self.storage_classes:
+                if "(default)" in display:
+                    default_sc = name
+                    break
+            if not default_sc:
+                default_sc = self.storage_classes[0][1]
+
+            # Update options
+            sc_select.set_options([(d, n) for d, n in self.storage_classes])
+            sc_select.value = default_sc
+        else:
+            # Replace with input if no storage classes found
+            sc_select.set_options([("(none available)", "")])
+            sc_select.value = ""
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "back-btn":
+            self.action_back()
+        elif event.button.id == "generate-btn":
+            self.generate_pvc()
+
+    def generate_pvc(self):
+        name = self.query_one("#pvc-name", Input).value.strip()
+        size = self.query_one("#pvc-size", Input).value.strip()
+        access_mode = self.query_one("#pvc-access", Select).value
+        folder = self.query_one("#pvc-folder", Input).value.strip()
+
+        # Get storage class
+        storage_class = ""
+        try:
+            sc_select = self.query_one("#pvc-storage-class", Select)
+            storage_class = sc_select.value
+        except Exception:
+            try:
+                sc_manual = self.query_one("#pvc-storage-class-manual", Input)
+                storage_class = sc_manual.value.strip()
+            except Exception:
+                pass
+
+        if not name:
+            self.notify("PVC name is required", severity="error")
+            return
+        if not size:
+            self.notify("Storage size is required", severity="error")
+            return
+
+        # Generate PVC manifest
+        storage_class_line = f"  storageClassName: {storage_class}\n" if storage_class else ""
+        manifest = f"""apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {name}
+  namespace: {self.namespace}
+spec:
+  accessModes:
+    - {access_mode}
+{storage_class_line}  resources:
+    requests:
+      storage: {size}
+"""
+
+        # Save to file
+        folder_path = Path(folder).expanduser().resolve()
+        folder_path.mkdir(parents=True, exist_ok=True)
+        output_file = folder_path / f"{name}-pvc.yaml"
+
+        try:
+            with open(output_file, "w") as f:
+                f.write(manifest)
+            self.notify(f"PVC manifest saved to: {output_file}")
+
+            # Ask if user wants to apply
+            def apply_callback(apply: bool):
+                if apply:
+                    rc, _, stderr = run_kubectl(["apply", "-f", str(output_file)])
+                    if rc == 0:
+                        self.notify(f"PVC {name} created successfully")
+                    else:
+                        self.notify(f"Failed to apply PVC: {stderr}", severity="error")
+                self.action_back()
+
+            self.app.push_screen(ConfirmScreen(f"Apply PVC {name} to namespace {self.namespace}?"), callback=apply_callback)
+        except IOError as e:
+            self.notify(f"Failed to save manifest: {e}", severity="error")
+
+    def action_back(self):
+        self.app.pop_screen()
+
+
+class PVCSelectScreen(Screen):
+    """Screen for selecting PVCs from the cluster."""
+
+    BINDINGS = [("q", "back", "Back"), ("escape", "back", "Back")]
+
+    def __init__(self, namespace: str, selected_pvcs: list[str] = None):
+        self.namespace = namespace
+        self.pvcs = get_pvcs(namespace)
+        self.selected_pvcs = selected_pvcs or []
+        self.result_pvcs = []
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield Container(
+            Label(f"Select PVCs to mount (namespace: {self.namespace})", classes="title"),
+            Label("Available PVCs:") if self.pvcs else Label("No PVCs found in namespace."),
+            *self._build_pvc_list(),
+            Horizontal(
+                Button("Confirm Selection", variant="primary", id="confirm-btn"),
+                Button("Create New PVC First", variant="default", id="new-pvc-btn"),
+                Button("Back", variant="default", id="back-btn"),
+            ),
+            id="pvc-select-container"
+        )
+        yield Footer()
+
+    def _build_pvc_list(self):
+        widgets = []
+        for pvc in self.pvcs:
+            is_checked = pvc["name"] in self.selected_pvcs
+            widgets.append(
+                Checkbox(
+                    f"{pvc['name']} ({pvc['storage']}, {', '.join(pvc['access_modes'])}, {pvc['status']})",
+                    value=is_checked,
+                    id=f"pvc-{pvc['name']}"
+                )
+            )
+        return widgets
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "back-btn":
+            self.dismiss(None)
+        elif event.button.id == "confirm-btn":
+            self.confirm_selection()
+        elif event.button.id == "new-pvc-btn":
+            self.app.push_screen(PVCScreen(self.namespace))
+
+    def confirm_selection(self):
+        selected = []
+        for pvc in self.pvcs:
+            checkbox = self.query_one(f"#pvc-{pvc['name']}", Checkbox)
+            if checkbox.value:
+                selected.append(pvc["name"])
+        self.dismiss(selected)
+
+
+class DeploymentScreen(Screen):
+    """Screen for creating a new Deployment or TrainJob."""
+
+    BINDINGS = [("q", "back", "Back"), ("escape", "back", "Back")]
+
+    def __init__(self, namespace: str):
+        self.namespace = namespace
+        self.defaults = get_default_config()
+        self.profiles = get_profiles()
+        self.nodetiers = []
+        self.selected_pvcs = []
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield Container(
+            Label(f"New Deployment/TrainJob (namespace: {self.namespace})", classes="title"),
+            Label("Resource Type:"),
+            RadioSet(
+                RadioButton("Deployment", value=True, id="res-deployment"),
+                RadioButton("TrainJob", id="res-trainjob"),
+                id="resource-type"
+            ),
+            Label("Node Tier (determines resources):"),
+            Select(
+                [("Loading...", "none")],
+                value="none",
+                id="nodetier"
+            ),
+            Label("Optional Init Script (bash commands for init container):"),
+            TextArea(id="init-script", language="bash", text=""),
+            Label("Container Image:"),
+            Input(placeholder="e.g., pytorch/pytorch:2.0.0-cuda11.7-cudnn8-runtime", value=self.defaults.get("image", ""), id="image"),
+            Label("Entrypoint Command (bash):"),
+            TextArea(id="entrypoint", language="bash", text="#!/bin/bash\nset -euxo pipefail\n\necho 'Hello, World!'\n"),
+            Horizontal(
+                Button("Select PVCs to Mount", id="pvc-btn"),
+                Label(f"Selected: {len(self.selected_pvcs)} PVCs", id="pvc-label"),
+            ),
+            Label("Instance Type (for nodepool selection):"),
+            Select(
+                [(f"{p[0]} - {p[1]}", p[0]) for p in self.profiles] if self.profiles else [("default", "default")],
+                value=self.profiles[0][0] if self.profiles else "default",
+                id="profile"
+            ),
+            Label("Output configuration to:"),
+            Input(placeholder="./my-job", value=".", id="output-folder"),
+            Static(""),
+            Horizontal(
+                Button("Preview & Confirm", variant="primary", id="preview-btn"),
+                Button("Back", variant="default", id="back-btn"),
+            ),
+            id="deploy-container"
+        )
+        yield Footer()
+
+    def on_mount(self):
+        self.run_worker(self._load_nodetiers())
+
+    async def _load_nodetiers(self):
+        """Load node tiers in background."""
+        import asyncio
+        loop = asyncio.get_event_loop()
+        self.nodetiers = await loop.run_in_executor(None, get_nodetiers)
+
+        # Update the select widget
+        tier_select = self.query_one("#nodetier", Select)
+        if self.nodetiers:
+            # Find default (none first, or first available)
+            default_tier = "none"
+            for display, name, resources in self.nodetiers:
+                if name == "none":
+                    default_tier = "none"
+                    break
+            if default_tier == "none" and self.nodetiers:
+                default_tier = self.nodetiers[0][1]
+
+            tier_select.set_options([(d, n) for d, n, r in self.nodetiers])
+            tier_select.value = default_tier
+        else:
+            tier_select.set_options([("none (CPU only)", "none")])
+            tier_select.value = "none"
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "back-btn":
+            self.action_back()
+        elif event.button.id == "pvc-btn":
+            self.select_pvcs()
+        elif event.button.id == "preview-btn":
+            self.preview()
+
+    def select_pvcs(self):
+        def on_select(pvcs: list[str] | None):
+            if pvcs is not None:
+                self.selected_pvcs = pvcs
+                label = self.query_one("#pvc-label", Label)
+                label.update(f"Selected: {len(self.selected_pvcs)} PVCs")
+
+        self.app.push_screen(PVCSelectScreen(self.namespace, self.selected_pvcs), callback=on_select)
+
+    def preview(self):
+        # Gather all inputs
+        resource_type = "Deployment" if self.query_one("#res-deployment", RadioButton).value else "TrainJob"
+        init_script = self.query_one("#init-script", TextArea).text.strip()
+        image = self.query_one("#image", Input).value.strip()
+        entrypoint = self.query_one("#entrypoint", TextArea).text.strip()
+        profile = self.query_one("#profile", Select).value
+        nodetier = self.query_one("#nodetier", Select).value
+        folder = self.query_one("#output-folder", Input).value.strip()
+
+        if not image:
+            self.notify("Container image is required", severity="error")
+            return
+        if not entrypoint:
+            self.notify("Entrypoint command is required", severity="error")
+            return
+        if not folder:
+            self.notify("Output folder is required", severity="error")
+            return
+
+        # Get resources for selected nodetier
+        nodetier_resources = None
+        for tier in self.nodetiers:
+            if tier[1] == nodetier:
+                nodetier_resources = tier[2]
+                break
+        if not nodetier_resources:
+            nodetier_resources = self.nodetiers[0][2] if self.nodetiers else {
+                "cpu_request": "1", "cpu_limit": "4", "mem_request": "4Gi", "mem_limit": "16Gi", "gpu_request": "0", "gpu_limit": "0"
+            }
+
+        self.app.push_screen(ConfirmDeploymentScreen(
+            namespace=self.namespace,
+            resource_type=resource_type,
+            init_script=init_script,
+            image=image,
+            entrypoint=entrypoint,
+            profile=profile,
+            nodetier=nodetier,
+            nodetier_resources=nodetier_resources,
+            pvcs=self.selected_pvcs,
+            folder=folder,
+            defaults=self.defaults,
+        ))
+
+    def action_back(self):
+        self.app.pop_screen()
+
+
+class ConfirmDeploymentScreen(Screen):
+    """Screen to confirm and apply deployment."""
+
+    BINDINGS = [("q", "back", "Back"), ("escape", "back", "Back")]
+
+    def __init__(self, namespace: str, resource_type: str, init_script: str, image: str,
+                 entrypoint: str, profile: str, nodetier: str, nodetier_resources: dict,
+                 pvcs: list[str], folder: str, defaults: dict):
+        self.namespace = namespace
+        self.resource_type = resource_type
+        self.init_script = init_script
+        self.image = image
+        self.entrypoint = entrypoint
+        self.profile = profile
+        self.nodetier = nodetier
+        self.nodetier_resources = nodetier_resources
+        self.pvcs = pvcs
+        self.folder = folder
+        self.defaults = defaults
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        # Generate preview of what will be created
+        preview = self._generate_preview()
+
+        yield Header(show_clock=True)
+        yield Container(
+            Label("Confirm Deployment", classes="title"),
+            Label("The following will be created:"),
+            Static(Panel(preview, title="Generated Files")),
+            Horizontal(
+                Button("Create & Apply", variant="success", id="apply-btn"),
+                Button("Back", variant="default", id="back-btn"),
+            ),
+            id="confirm-container"
+        )
+        yield Footer()
+
+    def _generate_preview(self) -> str:
+        folder_path = Path(self.folder).expanduser().resolve()
+        lines = [
+            f"Folder: {folder_path}",
+            f"Files:",
+            f"  - deploy.yaml ({self.resource_type} manifest)",
+            f"  - entrypoint.sh",
+        ]
+        if self.init_script:
+            lines.append("  - init.sh")
+        lines.extend([
+            "",
+            f"Configuration:",
+            f"  Namespace: {self.namespace}",
+            f"  Image: {self.image}",
+            f"  Profile: {self.profile}",
+            f"  Node Tier: {self.nodetier}",
+            f"  Resources:",
+            f"    CPU: {self.nodetier_resources.get('cpu_request', '?')}/{self.nodetier_resources.get('cpu_limit', '?')}",
+            f"    Memory: {self.nodetier_resources.get('mem_request', '?')}/{self.nodetier_resources.get('mem_limit', '?')}",
+            f"    GPU: {self.nodetier_resources.get('gpu_request', '?')}/{self.nodetier_resources.get('gpu_limit', '?')}",
+            f"  PVCs: {', '.join(self.pvcs) if self.pvcs else 'None'}",
+            f"  Init script: {'Yes' if self.init_script else 'No'}",
+        ])
+        return "\n".join(lines)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "back-btn":
+            self.app.pop_screen()
+        elif event.button.id == "apply-btn":
+            self.create_and_apply()
+
+    def create_and_apply(self):
+        folder_path = Path(self.folder).expanduser().resolve()
+        folder_path.mkdir(parents=True, exist_ok=True)
+
+        try:
+            # Write entrypoint.sh
+            entrypoint_path = folder_path / "entrypoint.sh"
+            with open(entrypoint_path, "w") as f:
+                f.write(self.entrypoint)
+            os.chmod(entrypoint_path, 0o755)
+
+            # Write init.sh if provided
+            has_init = bool(self.init_script)
+            if has_init:
+                init_path = folder_path / "init.sh"
+                with open(init_path, "w") as f:
+                    f.write(self.init_script)
+                os.chmod(init_path, 0o755)
+
+            # Generate deploy.yaml using template
+            template_file = TEMPLATES_DIR / f"{self.resource_type.lower()}.yaml"
+            if not template_file.exists():
+                self.notify(f"Template not found: {template_file}", severity="error")
+                return
+
+            with open(template_file) as f:
+                template_content = f.read()
+
+            # Substitute variables
+            manifest = self._substitute_template(template_content, has_init)
+
+            deploy_path = folder_path / "deploy.yaml"
+            with open(deploy_path, "w") as f:
+                f.write(manifest)
+
+            self.notify(f"Files created in {folder_path}")
+
+            # Run launch-new to apply
+            self.notify(f"Running: ./launch-new {self.profile} {folder_path}")
+
+            def apply_callback(confirmed: bool):
+                if confirmed:
+                    result = subprocess.run(
+                        ["./launch-new", self.profile, str(folder_path)],
+                        cwd=SCRIPT_DIR,
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode == 0:
+                        self.notify("Deployment applied successfully!")
+                        self.app.pop_screen()
+                        self.app.pop_screen()  # Go back to main menu
+                    else:
+                        self.notify(f"launch-new failed: {result.stderr}", severity="error")
+                else:
+                    self.notify("Deployment cancelled - files saved for manual application")
+                    self.app.pop_screen()
+                    self.app.pop_screen()
+
+            self.app.push_screen(
+                ConfirmScreen(f"Execute ./launch-new {self.profile} {folder_path}?"),
+                callback=apply_callback
+            )
+
+        except IOError as e:
+            self.notify(f"Failed to create files: {e}", severity="error")
+
+    def _substitute_template(self, template: str, has_init: bool) -> str:
+        """Substitute variables in the template."""
+        import datetime
+
+        job_name = f"new-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
+
+        # Get profile values (for nodepool)
+        profile_path = PROFILES_DIR / f"{self.profile}.yaml"
+        nodepool = yaml_value(profile_path, "nodepool") or "default"
+        shm_size = yaml_value(profile_path, "shared_memory_size") or "256Mi"
+
+        # Use nodetier resources (selected by user)
+        resources = self.nodetier_resources
+
+        # Get launcher info
+        user = os.environ.get("USER", "unknown")
+        launcher_id = f"local:{user}@{os.uname().nodename}"
+        launcher_hash = self._hash_launcher(launcher_id)
+
+        # Build init script content (escaped for YAML)
+        if has_init:
+            init_content = self.init_script
+            init_escaped = "\n".join("                " + line for line in init_content.splitlines())
+        else:
+            init_escaped = ""
+
+        # Substitute
+        result = template
+        replacements = {
+            "JOB_NAME": job_name,
+            "NAMESPACE": self.namespace,
+            "PROFILE": self.profile,
+            "LAUNCHER_ID": launcher_id,
+            "LAUNCHER_HASH": launcher_hash,
+            "USER": user,
+            "SERVICE_ACCOUNT": self.defaults.get("service_account_name", "default"),
+            "IMAGE": self.image,
+            "INIT_IMAGE": self.image,
+            "NODEPOOL": nodepool,
+            "NODETIER": self.nodetier,
+            "CPU_REQUEST": resources.get("cpu_request", "1"),
+            "CPU_LIMIT": resources.get("cpu_limit", "4"),
+            "MEM_REQUEST": resources.get("mem_request", "4Gi"),
+            "MEM_LIMIT": resources.get("mem_limit", "16Gi"),
+            "GPU_REQUEST": resources.get("gpu_request", "0"),
+            "GPU_LIMIT": resources.get("gpu_limit", "0"),
+            "DATA_PVC": self.pvcs[0] if self.pvcs else self.defaults.get("data_pvc", "data"),
+            "CHECKPOINT_PVC": self.defaults.get("checkpoint_pvc", "checkpoints"),
+            "S3_PVC": self.defaults.get("s3_data_pvc", "s3-data"),
+            "SHM_SIZE": shm_size,
+            "REPLICAS": "1",
+            "CONFIGMAP_NAME": f"{job_name}-files",
+            "INIT_SCRIPT": init_escaped,
+            "NODEPOOL": profile_values["NODEPOOL"],
+            "NODETIER": profile_values["NODETIER"],
+        }
+
+        for key, value in replacements.items():
+            result = result.replace(f"{{{{{key}}}}}", str(value))
+
+        # Remove initContainers section if no init script
+        if not has_init:
+            # Simple removal of initContainers section
+            lines = result.splitlines()
+            filtered_lines = []
+            skip = False
+            indent_level = None
+            for line in lines:
+                if "initContainers:" in line and not has_init:
+                    skip = True
+                    indent_level = len(line) - len(line.lstrip())
+                    continue
+                if skip:
+                    current_indent = len(line) - len(line.lstrip())
+                    if line.strip() and current_indent <= indent_level:
+                        skip = False
+                    else:
+                        continue
+                filtered_lines.append(line)
+            result = "\n".join(filtered_lines)
+
+        return result
+
+    def _hash_launcher(self, launcher_id: str) -> str:
+        import hashlib
+        return hashlib.sha256(launcher_id.encode()).hexdigest()[:16]
+
+
+class InteractiveScreen(Screen):
+    """Screen for launching an interactive session."""
+
+    BINDINGS = [("q", "back", "Back"), ("escape", "back", "Back")]
+
+    def __init__(self, namespace: str):
+        self.namespace = namespace
+        self.defaults = get_default_config()
+        self.nodetiers = []
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield Container(
+            Label(f"New Interactive Session (namespace: {self.namespace})", classes="title"),
+            Label("Node Tier (determines resources):"),
+            Select(
+                [("Loading...", "none")],
+                value="none",
+                id="nodetier"
+            ),
+            Label("Container Image:"),
+            Input(placeholder="e.g., ubuntu:22.04", value=self.defaults.get("image", "ubuntu:22.04"), id="image"),
+            Label("Pod Name (optional):"),
+            Input(placeholder="interactive-xxx (auto-generated)", id="pod-name"),
+            Label("Command:"),
+            Input(placeholder="/bin/bash", value="/bin/bash", id="command"),
+            Static(""),
+            Horizontal(
+                Button("Launch & Exec", variant="primary", id="launch-btn"),
+                Button("Back", variant="default", id="back-btn"),
+            ),
+            id="interactive-container"
+        )
+        yield Footer()
+
+    def on_mount(self):
+        self.run_worker(self._load_nodetiers())
+
+    async def _load_nodetiers(self):
+        """Load node tiers in background."""
+        import asyncio
+        loop = asyncio.get_event_loop()
+        self.nodetiers = await loop.run_in_executor(None, get_nodetiers)
+
+        # Update the select widget
+        tier_select = self.query_one("#nodetier", Select)
+        if self.nodetiers:
+            default_tier = "none"
+            for display, name, resources in self.nodetiers:
+                if name == "none":
+                    default_tier = "none"
+                    break
+            if default_tier == "none" and self.nodetiers:
+                default_tier = self.nodetiers[0][1]
+
+            tier_select.set_options([(d, n) for d, n, r in self.nodetiers])
+            tier_select.value = default_tier
+        else:
+            tier_select.set_options([("none (CPU only)", "none")])
+            tier_select.value = "none"
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "back-btn":
+            self.action_back()
+        elif event.button.id == "launch-btn":
+            self.launch()
+
+    def launch(self):
+        import datetime
+
+        image = self.query_one("#image", Input).value.strip()
+        pod_name = self.query_one("#pod-name", Input).value.strip()
+        command = self.query_one("#command", Input).value.strip()
+        nodetier = self.query_one("#nodetier", Select).value
+
+        if not image:
+            self.notify("Container image is required", severity="error")
+            return
+
+        if not pod_name:
+            pod_name = f"interactive-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
+
+        # Build tolerations if GPU is requested (only for non-none tiers)
+        gpu_request = "0"
+        tolerations = ""
+        if nodetier != "none":
+            # Look up GPU from tier
+            for tier in self.nodetiers:
+                if tier[1] == nodetier:
+                    gpu_request = tier[2].get('gpu_request', '0')
+                    break
+            if gpu_request and gpu_request != '0':
+                tolerations = """  tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+"""
+
+        # Create pod manifest with conservative resources (512Mi RAM, 1 CPU limit)
+        node_selector = f"""  nodeSelector:
+    node-tier: {nodetier}
+""" if nodetier != "none" else ""
+
+        manifest = f"""apiVersion: v1
+kind: Pod
+metadata:
+  name: {pod_name}
+  namespace: {self.namespace}
+spec:
+{node_selector}{tolerations}  containers:
+  - name: main
+    image: {image}
+    command: [{command}]
+    stdin: true
+    tty: true
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "256Mi"
+        nvidia.com/gpu: "{gpu_request}"
+      limits:
+        cpu: "1"
+        memory: "512Mi"
+        nvidia.com/gpu: "{gpu_request}"
+"""
+
+        # Write manifest to temp file
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write(manifest)
+            temp_path = f.name
+
+        # Push to progress screen with grayed out UI
+        self.app.push_screen(LaunchProgressScreen(
+            namespace=self.namespace,
+            pod_name=pod_name,
+            command=command,
+            manifest=manifest,
+            temp_path=temp_path
+        ))
+
+    def action_back(self):
+        self.app.pop_screen()
+
+
+class LaunchProgressScreen(Screen):
+    """Screen showing live pod launch progress with events."""
+
+    BINDINGS = [("q", "cancel", "Cancel")]
+
+    def __init__(self, namespace: str, pod_name: str, command: str, manifest: str, temp_path: str):
+        self.namespace = namespace
+        self.pod_name = pod_name
+        self.command = command
+        self.manifest = manifest
+        self.temp_path = temp_path
+        self.cancelled = False
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield Container(
+            Label(f"Launching {self.pod_name}", classes="title"),
+            Static("Initializing...", id="status-line"),
+            Static("", id="pod-status"),
+            Label("Recent Events:"),
+            Static("Waiting for events...", id="events-log"),
+            Horizontal(
+                Button("Cancel", variant="error", id="cancel-btn"),
+                id="button-row"
+            ),
+            id="progress-container"
+        )
+        yield Footer()
+
+    def on_mount(self):
+        # Gray out the container while working
+        container = self.query_one("#progress-container", Container)
+        container.styles.opacity = 0.7
+        self.run_worker(self._launch_worker())
+
+    async def _launch_worker(self):
+        """Background worker that handles the launch process."""
+        import time
+
+        # Check if pod already exists
+        self._update_status("Checking if pod exists...")
+        rc, stdout, _ = run_kubectl(["get", "pod", self.pod_name, "-n", self.namespace, "-o", "json"])
+        pod_exists = rc == 0
+
+        if pod_exists:
+            try:
+                pod_data = json.loads(stdout)
+                phase = pod_data.get("status", {}).get("phase", "Unknown")
+                if phase == "Running":
+                    self._update_status("✓ Pod already running")
+                    self._exec_into_pod()
+                    return
+                elif phase in ["Pending", "ContainerCreating"]:
+                    self._update_status(f"Pod exists and is {phase}")
+                else:
+                    self._update_status(f"Pod in {phase} state, deleting...")
+                    run_kubectl(["delete", "pod", self.pod_name, "-n", self.namespace])
+                    pod_exists = False
+                    await self._sleep(2)
+            except json.JSONDecodeError:
+                pass
+
+        # Create pod if needed
+        if not pod_exists:
+            self._update_status("Creating pod...")
+            rc, _, stderr = run_kubectl(["apply", "-f", self.temp_path])
+            if rc != 0:
+                self._update_status(f"Failed: {stderr}", error=True)
+                self._cleanup()
+                return
+            self._update_status("✓ Pod created")
+
+        # Wait for pod to be ready with live updates
+        start_time = time.time()
+        timeout = 360  # 6 minutes
+        check_interval = 2
+
+        while time.time() - start_time < timeout and not self.cancelled:
+            # Get pod status
+            rc, stdout, _ = run_kubectl(["get", "pod", self.pod_name, "-n", self.namespace, "-o", "json"])
+            pod_status = "Unknown"
+            ready_status = "False"
+            waiting_reason = ""
+
+            if rc == 0:
+                try:
+                    pod_data = json.loads(stdout)
+                    phase = pod_data.get("status", {}).get("phase", "Unknown")
+                    conditions = pod_data.get("status", {}).get("conditions", [])
+                    ready_condition = next((c for c in conditions if c.get("type") == "Ready"), None)
+                    ready_status = ready_condition.get("status", "False") if ready_condition else "False"
+
+                    container_statuses = pod_data.get("status", {}).get("containerStatuses", [])
+                    for cs in container_statuses:
+                        waiting = cs.get("state", {}).get("waiting", {})
+                        if waiting:
+                            waiting_reason = waiting.get("reason", "")
+                            break
+
+                    pod_status = phase
+
+                    if phase == "Running" and ready_status == "True":
+                        self._update_status("✓ Pod is ready!")
+                        self._exec_into_pod()
+                        return
+                    elif phase == "Failed":
+                        self._update_status("Pod failed to start", error=True)
+                        self._cleanup()
+                        return
+
+                except json.JSONDecodeError:
+                    pass
+
+            # Update display
+            elapsed = int(time.time() - start_time)
+            status_text = f"[{elapsed}s] Pod: {pod_status}"
+            if ready_status == "True":
+                status_text += " (Ready)"
+            if waiting_reason:
+                status_text += f" - {waiting_reason}"
+            self._update_status(status_text)
+            self._update_pod_display(pod_status, ready_status)
+
+            # Get recent events
+            self._update_events()
+
+            await self._sleep(check_interval)
+
+        # Timeout
+        if not self.cancelled:
+            self._update_status("Timeout: Pod did not become ready in 6min", error=True)
+        self._cleanup()
+
+    def _update_status(self, text: str, error: bool = False):
+        status = self.query_one("#status-line", Static)
+        status.update(text)
+        if error:
+            status.styles.color = "red"
+
+    def _update_pod_display(self, phase: str, ready: str):
+        pod_status = self.query_one("#pod-status", Static)
+        pod_status.update(f"Status: {phase} | Ready: {ready}")
+
+    def _update_events(self):
+        """Get the 2 most recent events for the pod."""
+        # Get events from kubectl describe
+        rc, stdout, _ = run_kubectl(["get", "events", "-n", self.namespace,
+                                   "--field-selector", f"involvedObject.name={self.pod_name}",
+                                   "--sort-by=.lastTimestamp", "-o", "json"])
+        if rc != 0:
+            return
+
+        try:
+            data = json.loads(stdout)
+            items = data.get("items", [])
+            # Get last 2 events
+            recent = items[-2:] if len(items) >= 2 else items
+
+            lines = []
+            for evt in recent:
+                reason = evt.get("reason", "")
+                msg = evt.get("message", "")
+                last_seen = evt.get("lastTimestamp", "")
+                if reason and msg:
+                    lines.append(f"  {reason}: {msg}")
+                elif msg:
+                    lines.append(f"  {msg}")
+
+            if lines:
+                events_log = self.query_one("#events-log", Static)
+                events_log.update("\n".join(lines))
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    def _exec_into_pod(self):
+        """Exec into the running pod."""
+        self._cleanup()
+        # Save exec command and exit - main() will handle the exec
+        NewApp._exec_command = ["kubectl", "exec", "-n", self.namespace, "-it", self.pod_name, "--", self.command]
+        self.app.exit()
+
+    def _cleanup(self):
+        """Cleanup temp files and restore UI."""
+        try:
+            os.unlink(self.temp_path)
+        except:
+            pass
+        # Restore opacity
+        try:
+            container = self.query_one("#progress-container", Container)
+            container.styles.opacity = 1.0
+        except:
+            pass
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "cancel-btn":
+            self.cancel()
+
+    def cancel(self):
+        self.cancelled = True
+        self._update_status("Cancelled by user")
+        self._cleanup()
+        self.app.pop_screen()
+
+    async def _sleep(self, seconds: float):
+        import asyncio
+        await asyncio.sleep(seconds)
+
+
+class ConfirmScreen(Screen):
+    """Simple confirmation dialog."""
+
+    BINDINGS = [("y", "yes", "Yes"), ("n", "no", "No"), ("enter", "yes", "Yes")]
+
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        yield Container(
+            Label(self.message, classes="title"),
+            Horizontal(
+                Button("Yes", variant="success", id="yes-btn"),
+                Button("No", variant="error", id="no-btn"),
+            ),
+            id="confirm-dialog"
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "yes-btn":
+            self.dismiss(True)
+        else:
+            self.dismiss(False)
+
+    def action_yes(self):
+        self.dismiss(True)
+
+    def action_no(self):
+        self.dismiss(False)
+
+
+class NewApp(App):
+    """Main TUI application."""
+
+    TITLE = "Hydra Dashboard"
+    _exec_command: list[str] | None = None
+
+    def __init__(self, namespace=None):
+        super().__init__()
+        self.initial_namespace = namespace
+
+    CSS = """
+    Screen { align: center middle; }
+    .title { text-align: center; text-style: bold; color: $primary; margin: 1 0; }
+    Container {
+        border: solid $primary;
+        padding: 1 2;
+        width: auto;
+        max-width: 100;
+        height: auto;
+    }
+    #pvc-container, #deploy-container, #interactive-container {
+        height: auto;
+        max-height: 40;
+        overflow-y: auto;
+    }
+    #progress-container {
+        width: 80;
+        max-height: 25;
+    }
+    #progress-container Static {
+        text-align: left;
+        margin: 1 0;
+    }
+    #events-log {
+        height: auto;
+        max-height: 8;
+        overflow-y: auto;
+        background: $surface-darken-1;
+        padding: 0 1;
+        color: $text-muted;
+    }
+    Input, Select, TextArea { margin: 1 0; width: 100%; }
+    TextArea { height: 6; }
+    Button { margin: 0 1; }
+    Horizontal { height: auto; align: center middle; }
+    Checkbox { margin: 0 1; }
+    """
+
+    def __init__(self, namespace: Optional[str] = None):
+        self.initial_namespace = namespace
+        super().__init__()
+
+    def on_mount(self):
+        if self.initial_namespace:
+            self.push_screen(MainMenuScreen(self.initial_namespace))
+        else:
+            # Check for saved namespace
+            config = load_dotfile()
+            saved_ns = config.get("namespace")
+
+            if saved_ns:
+                self.push_screen(MainMenuScreen(saved_ns))
+            else:
+                # First run - ask for namespace
+                def on_namespace_select(ns: str | None):
+                    if ns:
+                        save_dotfile({"namespace": ns})
+                        self.push_screen(MainMenuScreen(ns))
+                    else:
+                        self.exit()
+
+                self.push_screen(NamespaceScreen(), callback=on_namespace_select)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Interactive TUI for creating Kubernetes resources")
+    parser.add_argument("--namespace", "-n", help="Override the saved namespace")
+    parser.add_argument("--version", "-v", action="version", version="%(prog)s 1.0")
+    args = parser.parse_args()
+
+    app = NewApp(namespace=args.namespace)
+    app.run()
+
+    # Check if we need to exec into a pod after exit
+    if NewApp._exec_command:
+        # Small delay to let terminal settle after Textual exits
+        time.sleep(0.1)
+        # Run kubectl exec
+        print(f"\n[hydra] Connecting to pod...\n")
+        result = subprocess.run(NewApp._exec_command)
+
+        # After exec exits, prompt for pod cleanup
+        pod_name = None
+        namespace = None
+        for i, arg in enumerate(NewApp._exec_command):
+            if arg == "-n" or arg == "--namespace":
+                namespace = NewApp._exec_command[i + 1] if i + 1 < len(NewApp._exec_command) else None
+            if arg.startswith("-n") and len(arg) > 2:
+                namespace = arg[2:]
+
+        # Extract pod name from exec command: kubectl exec ... pod_name -- command
+        try:
+            # Find the pod name (after -n/-it flags, before --)
+            dash_dash_idx = NewApp._exec_command.index("--")
+            pod_name = NewApp._exec_command[dash_dash_idx - 1]
+        except (ValueError, IndexError):
+            pass
+
+        if pod_name and namespace:
+            # Check if pod still exists
+            rc, _, _ = run_kubectl(["get", "pod", pod_name, "-n", namespace])
+            if rc == 0:
+                print(f"\n[hydra] Interactive session ended.")
+                print(f"[hydra] Pod '{pod_name}' is still running.")
+                print(f"\nOptions:")
+                print(f"  k) Kill pod (default - press Enter)")
+                print(f"  d) Detach (leave pod running)")
+                print(f"  r) Re-attach")
+                try:
+                    choice = input("\nChoice [k]: ").strip().lower()
+                    if choice in ("", "k"):
+                        print(f"[hydra] Killing pod {pod_name}...")
+                        rc, _, stderr = run_kubectl(["delete", "pod", pod_name, "-n", namespace])
+                        if rc == 0:
+                            print(f"[hydra] Pod killed.")
+                        else:
+                            print(f"[hydra] Failed to kill pod: {stderr}")
+                    elif choice == "r":
+                        print(f"[hydra] Re-attaching...")
+                        subprocess.run(NewApp._exec_command)
+                    else:
+                        print(f"[hydra] Pod left running. Re-attach with:")
+                        print(f"  kubectl exec -n {namespace} -it {pod_name} -- /bin/bash")
+                except (EOFError, KeyboardInterrupt):
+                    # Ungraceful exit - default to kill
+                    print(f"\n[hydra] Interrupted. Killing pod {pod_name}...")
+                    run_kubectl(["delete", "pod", pod_name, "-n", namespace])
+                    print(f"[hydra] Pod killed.")
+
+
+if __name__ == "__main__":
+    main()

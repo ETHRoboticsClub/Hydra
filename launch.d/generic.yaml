@@ -6,7 +6,34 @@ checkpoint_pvc: act-checkpoints
 cache_pvc: cache
 s3_data_pvc: s3-data
 git_clone_depth: 1
-bootstrap_script: pod-bootstrap.sh
 default_shared_memory_size: 256Mi
-bootstrap_dirs: /data /checkpoints
-bootstrap_chown_dirs: /data /checkpoints
+
+# Structured volume definitions (used by launch-new)
+volumes:
+  data:
+    pvc: act-data
+    mountPath: /data
+  checkpoints:
+    pvc: act-checkpoints
+    mountPath: /checkpoints
+  s3:
+    pvc: s3-data
+    mountPath: /s3
+  shm:
+    emptyDir:
+      medium: Memory
+      sizeLimit: 256Mi
+
+# Secrets configuration (used by launch-new)
+secrets:
+  wandb:
+    secretName: wandb-secret
+    mountPath: /var/run/secrets/wandb
+  hf:
+    secretName: hf-secret
+    mountPath: /var/run/secrets/hf
+
+# Additional environment variables for trainer containers
+trainer_env:
+  # Add any global env vars here that should be injected into all training jobs
+  # Example: HYDRA_FULL_ERROR: "1"

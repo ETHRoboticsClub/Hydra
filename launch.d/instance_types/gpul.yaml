@@ -2,16 +2,15 @@ description: g6e.12xlarge - 48 vCPU, 384Gi RAM, 4x L40S 192GB
 instance_type: g6e.12xlarge
 vcpus: 48
 memory: 384Gi
+# Actual allocatable after k8s system reservations
+cpu_allocatable: 44
+memory_allocatable: 340Gi
 gpu_model: L40S
 gpu_memory: 192GB
 nodepool: gpul
 nodetier: gpul
 gpu_request: 4
 gpu_limit: 4
-cpu_request: 48
-cpu_limit: 48
-memory_request: 384Gi
-memory_limit: 384Gi
 shared_memory_size: 192Gi
 multi_gpu_env: 1
 train_act_device_config: train/act/configs/aws_gpul.yaml

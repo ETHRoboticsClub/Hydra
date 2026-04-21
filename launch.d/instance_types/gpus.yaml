@@ -2,16 +2,15 @@ description: g6.xlarge - 4 vCPU, 16Gi RAM, 1x L4 24GB
 instance_type: g6.xlarge
 vcpus: 4
 memory: 16Gi
+# Actual allocatable after k8s system reservations
+cpu_allocatable: 3
+memory_allocatable: 13Gi
 gpu_model: L4
 gpu_memory: 24GB
 nodepool: gpus
 nodetier: gpus
 gpu_request: 1
 gpu_limit: 1
-cpu_request: 4
-cpu_limit: 4
-memory_request: 16Gi
-memory_limit: 16Gi
 shared_memory_size: 8Gi
 multi_gpu_env: 0
 train_act_device_config: train/act/configs/aws_gpus.yaml

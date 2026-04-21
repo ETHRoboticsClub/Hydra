@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# =============================================================================
+# kill-new: Clean job cleanup script for launch-new resources
+# =============================================================================
+
+readonly NS="${NAMESPACE:-robot-learning}"
+readonly DIVISIONS=(robot-learning humanoid)
+readonly LABEL_SELECTOR="ethrobotics.ch/managed-by=launch"
+
+# =============================================================================
+# Helpers
+# =============================================================================
+
+log() { echo "[kill-new] $*" >&2; }
+die() { log "$*"; exit 1; }
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: ./kill-new <target>
+
+  mine         Delete your jobs (by launcher hash)
+  <job-name>   Delete specific job (e.g., launch-new-20260418-120000)
+  <namespace>  Delete all launch-new jobs in division namespace
+
+Examples:
+  ./kill-new mine
+  ./kill-new launch-new-20260418-120000
+  ./kill-new robot-learning
+EOF
+}
+
+get_launcher_id() {
+  if [[ -n "${LAUNCHER_ID:-}" ]]; then
+    echo "$LAUNCHER_ID"
+  elif command -v aws &>/dev/null && aws_arn=$(aws sts get-caller-identity --query Arn --output text 2>/dev/null); then
+    echo "aws:$aws_arn"
+  else
+    echo "local:${USER:-unknown}@$(hostname -s)"
+  fi
+}
+
+launcher_hash() {
+  echo -n "$1" | shasum -a 256 | cut -c1-16
+}
+
+valid_job_name() {
+  [[ "$1" =~ ^launch-new-[0-9]{8}-[0-9]{6}$ ]]
+}
+
+valid_ns() {
+  [[ "$1" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]]
+}
+
+is_division() {
+  local d
+  for d in "${DIVISIONS[@]}"; do [[ "$1" == "$d" ]] && return 0; done
+  return 1
+}
+
+ns_exists() {
+  kubectl get namespace "$1" &>/dev/null
+}
+
+# =============================================================================
+# List Jobs
+# =============================================================================
+
+list_jobs() {
+  local ns found=0
+  for ns in "${DIVISIONS[@]}"; do
+    ns_exists "$ns" || continue
+
+    local tjobs=$(kubectl -n "$ns" get trainjob -l "$LABEL_SELECTOR" --no-headers 2>/dev/null || true)
+    local jobs=$(kubectl -n "$ns" get job -l "$LABEL_SELECTOR" --no-headers 2>/dev/null || true)
+    local depls=$(kubectl -n "$ns" get deployment -l "$LABEL_SELECTOR" --no-headers 2>/dev/null || true)
+
+    if [[ -n "$tjobs" ]]; then
+      found=1
+      echo "  $ns TrainJobs:"
+      echo "$tjobs" | awk '{print "    " $1}'
+    fi
+
+    if [[ -n "$jobs" ]]; then
+      found=1
+      echo "  $ns Jobs:"
+      echo "$jobs" | awk '{print "    " $1}'
+    fi
+
+    if [[ -n "$depls" ]]; then
+      found=1
+      echo "  $ns Deployments:"
+      echo "$depls" | awk '{print "    " $1}'
+    fi
+  done
+
+  [[ "$found" == 0 ]] && echo "  No launch-new jobs found."
+}
+
+# =============================================================================
+# Delete Operations
+# =============================================================================
+
+delete_one() {
+  local name="$1"
+  log "Deleting $name in $NS..."
+
+  kubectl -n "$NS" delete --ignore-not-found trainjob "$name" 2>/dev/null || true
+  kubectl -n "$NS" delete --ignore-not-found job "$name" 2>/dev/null || true
+  kubectl -n "$NS" delete --ignore-not-found deployment "$name" 2>/dev/null || true
+  kubectl -n "$NS" delete --ignore-not-found configmap "${name}-files" 2>/dev/null || true
+}
+
+delete_mine() {
+  local lid=$(get_launcher_id)
+  local hash=$(launcher_hash "$lid")
+  local sel="${LABEL_SELECTOR},ethrobotics.ch/launcher-hash=${hash}"
+
+  local tjobs=$(kubectl -n "$NS" get trainjob -l "$sel" -o name 2>/dev/null || true)
+  local jobs=$(kubectl -n "$NS" get job -l "$sel" -o name 2>/dev/null || true)
+  local depls=$(kubectl -n "$NS" get deployment -l "$sel" -o name 2>/dev/null || true)
+  local cmaps=$(kubectl -n "$NS" get configmap -l "$sel" -o name 2>/dev/null || true)
+
+  if [[ -z "$tjobs" && -z "$jobs" && -z "$depls" && -z "$cmaps" ]]; then
+    log "No jobs found for: $lid ($hash)"
+    return
+  fi
+
+  log "Deleting jobs for: $lid ($hash)"
+  [[ -n "$tjobs" ]] && echo "$tjobs" | sed 's/^/  /' && kubectl -n "$NS" delete --ignore-not-found trainjob -l "$sel"
+  [[ -n "$jobs" ]] && echo "$jobs" | sed 's/^/  /' && kubectl -n "$NS" delete --ignore-not-found job -l "$sel"
+  [[ -n "$depls" ]] && echo "$depls" | sed 's/^/  /' && kubectl -n "$NS" delete --ignore-not-found deployment -l "$sel"
+  [[ -n "$cmaps" ]] && kubectl -n "$NS" delete --ignore-not-found configmap -l "$sel"
+}
+
+delete_all() {
+  local ns="$1"
+  log "WARNING: About to delete ALL launch-new jobs in $ns"
+  read -rp "Continue? [y/N] " reply
+  [[ "$reply" =~ ^[Yy] ]] || { log "Aborted."; exit 1; }
+
+  log "Deleting all launch-new resources in $ns..."
+  kubectl -n "$ns" delete --ignore-not-found trainjob -l "$LABEL_SELECTOR"
+  kubectl -n "$ns" delete --ignore-not-found job -l "$LABEL_SELECTOR"
+  kubectl -n "$ns" delete --ignore-not-found deployment -l "$LABEL_SELECTOR"
+  kubectl -n "$ns" delete --ignore-not-found configmap -l "$LABEL_SELECTOR"
+}
+
+# =============================================================================
+# Main
+# =============================================================================
+
+main() {
+  [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && { usage; exit 0; }
+  [[ $# -eq 1 ]] || { usage; exit 1; }
+
+  local target="$1"
+
+  if [[ "$target" == "mine" ]]; then
+    delete_mine
+  elif valid_job_name "$target"; then
+    delete_one "$target"
+  elif valid_ns "$target" && is_division "$target" && ns_exists "$target"; then
+    delete_all "$target"
+  else
+    die "Unknown target: $target"
+  fi
+}
+
+main "$@"
