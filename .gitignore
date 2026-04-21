@@ -41,3 +41,5 @@ temp/
 
 # new script config
 .new-config
+ 
+__pycache__
