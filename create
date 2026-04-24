@@ -980,6 +980,7 @@ class InteractiveScreen(Screen):
         self.namespace = namespace
         self.defaults = get_default_config()
         self.nodetiers = []
+        self.selected_pvcs = []
         super().__init__()
 
     def compose(self) -> ComposeResult:
@@ -998,6 +999,10 @@ class InteractiveScreen(Screen):
             Input(placeholder="interactive-xxx (auto-generated)", id="pod-name"),
             Label("Command:"),
             Input(placeholder="/bin/bash", value="/bin/bash", id="command"),
+            Horizontal(
+                Button("Select PVCs to Mount", id="pvc-btn"),
+                Label(f"Selected: {len(self.selected_pvcs)} PVCs", id="pvc-label"),
+            ),
             Static(""),
             Horizontal(
                 Button("Launch & Exec", variant="primary", id="launch-btn"),
@@ -1019,12 +1024,14 @@ class InteractiveScreen(Screen):
         # Update the select widget
         tier_select = self.query_one("#nodetier", Select)
         if self.nodetiers:
-            default_tier = "none"
+            # Prefer "none" (CPU-only) as default if available, otherwise use first tier
+            default_tier = None
             for display, name, resources in self.nodetiers:
                 if name == "none":
                     default_tier = "none"
                     break
-            if default_tier == "none" and self.nodetiers:
+            # If "none" wasn't found, use the first tier as fallback
+            if default_tier is None:
                 default_tier = self.nodetiers[0][1]
 
             tier_select.set_options([(d, n) for d, n, r in self.nodetiers])
@@ -1036,8 +1043,19 @@ class InteractiveScreen(Screen):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "back-btn":
             self.action_back()
+        elif event.button.id == "pvc-btn":
+            self.select_pvcs()
         elif event.button.id == "launch-btn":
             self.launch()
+
+    def select_pvcs(self):
+        def on_select(pvcs: list[str] | None):
+            if pvcs is not None:
+                self.selected_pvcs = pvcs
+                label = self.query_one("#pvc-label", Label)
+                label.update(f"Selected: {len(self.selected_pvcs)} PVCs")
+
+        self.app.push_screen(PVCSelectScreen(self.namespace, self.selected_pvcs), callback=on_select)
 
     def launch(self):
         import datetime
@@ -1075,19 +1093,35 @@ class InteractiveScreen(Screen):
     node-tier: {nodetier}
 """ if nodetier != "none" else ""
 
+        # Build PVC volumes and volume mounts if PVCs are selected
+        volumes = ""
+        volume_mounts = ""
+        if self.selected_pvcs:
+            volumes = "  volumes:\n"
+            volume_mounts = "    volumeMounts:\n"
+            for i, pvc_name in enumerate(self.selected_pvcs):
+                # Sanitize PVC name for valid volume name (replace invalid chars)
+                volume_name = f"pvc-{i}"
+                mount_path = f"/data/{pvc_name}"
+                volumes += f"""  - name: {volume_name}
+    persistentVolumeClaim:
+      claimName: {pvc_name}
+"""
+                volume_mounts += f"    - name: {volume_name}\n      mountPath: {mount_path}\n"
+
         manifest = f"""apiVersion: v1
 kind: Pod
 metadata:
   name: {pod_name}
   namespace: {self.namespace}
 spec:
-{node_selector}{tolerations}  containers:
+{node_selector}{tolerations}{volumes}  containers:
   - name: main
     image: {image}
     command: [{command}]
     stdin: true
     tty: true
-    resources:
+{volume_mounts}    resources:
       requests:
         cpu: "500m"
         memory: "256Mi"
