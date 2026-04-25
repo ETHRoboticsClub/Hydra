@@ -8,9 +8,15 @@ SHUTDOWN_AFTER="${SHUTDOWN_AFTER:-43200}"  # default 12h, set to 0 to disable
 echo "[cosmos-libero] Container bootstrap starting..."
 nvidia-smi || true
 
+# Bare shell mode — skip all setup, just keep the container alive for kubectl exec
+if [ "${BARE_SHELL:-}" = "1" ]; then
+  echo "[cosmos-libero] BARE_SHELL mode — no setup, container is ready for exec."
+  sleep infinity
+fi
+
 # Install system packages (non-fatal if they fail)
 if ! command -v tmux &>/dev/null || ! command -v ffmpeg &>/dev/null; then
-  apt-get update -qq && apt-get install -y -qq tmux ffmpeg || echo "[cosmos-libero] Warning: some packages failed to install, continuing."
+  sudo apt-get update -qq && sudo apt-get install -y -qq tmux ffmpeg || echo "[cosmos-libero] Warning: some packages failed to install, continuing."
 fi
 
 # Install uv if not present (not included in the AWS DLC image)
@@ -41,8 +47,16 @@ cd "${REPO_DIR}"
 uv sync --extra cu126
 source .venv/bin/activate
 
+# sync data if not synced yet
+ulimit -n 65535
+aws s3 sync s3://ethrc-ml-data-916780037007/cosmos-predict2-libero/checkpoints /data/cosmos-predict2/checkpoints --region us-east-1
+aws s3 sync s3://ethrc-ml-data-916780037007/cosmos-predict2-libero/datasets /data/cosmos-predict2/datasets --region us-east-1
+
 if [ "${SMOKETEST:-}" = "1" ]; then
-  rm -f outputs/posttraining/video2world_lora/2b_libero_cosmos/checkpoints/latest_checkpoint.txt
+rm -f outputs/posttraining/video2world_lora/2b_libero_cosmos/checkpoints/latest_checkpoint.txt
+rm -f outputs/posttraining/video2world_lora/2b_libero_cosmos/config.pkl
+rm -f outputs/posttraining/video2world_lora/2b_libero_cosmos/config.yaml
+
   echo "[cosmos-libero] Starting smoke test (50 iters, ${NPROC:-1} GPU(s))..."
 
   IMAGINAIRE_OUTPUT_ROOT=outputs uv run torchrun \
@@ -52,8 +66,9 @@ if [ "${SMOKETEST:-}" = "1" ]; then
     --config=cosmos_predict2/configs/base/config.py -- \
     experiment=predict2_video2world_training_2b_libero_cosmos \
     model_parallel.context_parallel_size=2 \
-    dataloader_train.batch_size=4 \
+    dataloader_train.batch_size=16 \
     dataloader_val.batch_size=1 \
+    trainer.grad_accum_iter=2 \
     trainer.max_iter=50 \
     trainer.validation_iter=5 \
     trainer.max_val_iter=2 \
@@ -61,10 +76,10 @@ if [ "${SMOKETEST:-}" = "1" ]; then
     trainer.callbacks.draw_sample.is_sample=True \
     trainer.callbacks.draw_sample.show_all_frames=True \
     trainer.callbacks.draw_sample.guidance='[7.0]' \
-    checkpoint.save_iter=50
+    checkpoint.save_iter=1000
 
-  CKPT_DIR=outputs/posttraining/video2world_lora/2b_libero_cosmos/checkpoints
-  ITER=$(cat "${CKPT_DIR}/latest_checkpoint.txt")
+CKPT_DIR=outputs/posttraining/video2world_lora/2b_libero_cosmos/checkpoints
+ITER=$(cat "${CKPT_DIR}/latest_checkpoint.txt")
 
   echo "[cosmos-libero] Smoke test: running evaluation..."
   uv run python scripts/eval_libero_cosmos.py --out eval/base
@@ -84,14 +99,14 @@ if [ "${FULLRUN:-}" = "1" ]; then
     -m scripts.train \
     --config=cosmos_predict2/configs/base/config.py -- \
     experiment=predict2_video2world_training_2b_libero_cosmos \
-    model_parallel.context_parallel_size=2 \
-    dataloader_train.batch_size=4 \
+    model_parallel.context_parallel_size=1 \
+    dataloader_train.batch_size=8 \
     dataloader_val.batch_size=2 \
     trainer.max_iter=7000 \
-    trainer.grad_accum_iter=16 \
+    trainer.grad_accum_iter=2 \
     trainer.validation_iter=50 \
     trainer.max_val_iter=10 \
-    trainer.callbacks.draw_sample.every_n=100 \
+    trainer.callbacks.draw_sample.every_n=200 \
     trainer.callbacks.draw_sample.is_sample=True \
     trainer.callbacks.draw_sample.show_all_frames=True \
     trainer.callbacks.draw_sample.guidance='[7.0]' \

@@ -72,10 +72,14 @@ All steps run inside the pod shell. Steps are safe to re-run — downloads resum
 
 ```bash
 cd /data/cosmos-predict2
-
+ulimit -n 65535
 # 1–5. Download everything from S3 (checkpoints + fully prepared dataset, including conversions)
-aws s3 sync s3://ethrc-ml-data-916780037007/cosmos-predict2-libero/checkpoints /data/cosmos-predict2/checkpoints
-aws s3 sync s3://ethrc-ml-data-916780037007/cosmos-predict2-libero/datasets /data/cosmos-predict2/datasets
+aws s3 sync s3://ethrc-ml-data-916780037007/cosmos-predict2-libero/checkpoints /data/cosmos-predict2/checkpoints --region us-east-1
+aws s3 sync s3://ethrc-ml-data-916780037007/cosmos-predict2-libero/datasets /data/cosmos-predict2/datasets --region us-east-1
+# optional to get old checkpoins
+aws s3 sync s3://ethrc-ml-data-916780037007/cosmos-predict2-libero/outputs /data/cosmos-predict2/outputs --region us-east-1
+
+
 ```
 
 Alternatively, prepare from scratch (steps 1–5):

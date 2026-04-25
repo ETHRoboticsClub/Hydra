@@ -10,16 +10,19 @@ CONFIGMAP_NAME="cosmos-libero-files"
 cd "${SCRIPT_DIR}"
 
 # Nodepool map (from cluster Karpenter config):
-#   gpus / node-tier: gpus → g6.xlarge        (1x L4,   16GB  RAM,  4 vCPU)
-#   gpum / node-tier: gpum → g6e.xlarge        (1x L40S, 32GB  RAM,  4 vCPU)
-#                          → g6e.2xlarge       (1x L40S, 64GB  RAM,  8 vCPU)
-#   gpul / node-tier: gpul → g6e.12xlarge      (4x L40S, 384GB RAM, 48 vCPU)
-#   h100 / node-tier: h100 → p5.4xlarge        (1x H100, 192GB RAM, 16 vCPU)
+#   gpus / node-tier: gpus → g6.xlarge        (1x L4,    16GB  RAM,  4 vCPU)
+#   gpum / node-tier: gpum → g6e.xlarge        (1x L40S,  32GB  RAM,  4 vCPU)
+#                          → g6e.2xlarge       (1x L40S,  64GB  RAM,  8 vCPU)
+#   gpul / node-tier: gpul → g6e.12xlarge      (4x L40S, 384GB  RAM, 48 vCPU)
+#   h100 / node-tier: h100 → p5.4xlarge        (1x H100, 192GB  RAM, 16 vCPU)
+#   a100-40 / node-tier: a100-40 → p4d.24xlarge   (8x A100 40GB, 1152GB RAM, 96 vCPU)
+#   a100-80 / node-tier: a100-80 → p4de.24xlarge  (8x A100 80GB, 1152GB RAM, 96 vCPU)
 INSTANCE_TYPE=""
 NODEPOOL=""
 WANDB_KEY=""
 FULLRUN=false
 SMOKETEST=false
+BARE=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --instance-type) INSTANCE_TYPE="$2"; shift 2 ;;
@@ -27,6 +30,7 @@ while [[ $# -gt 0 ]]; do
     --wandb-key)     WANDB_KEY="$2";      shift 2 ;;
     --fullrun)       FULLRUN=true;        shift   ;;
     --smoketest)     SMOKETEST=true;      shift   ;;
+    --bare)          BARE=true;           shift   ;;
     *) echo "Unknown argument: $1"; exit 1 ;;
   esac
 done
@@ -34,20 +38,24 @@ done
 # Auto-infer nodepool from instance type
 if [ -z "${NODEPOOL}" ] && [ -n "${INSTANCE_TYPE}" ]; then
   case "${INSTANCE_TYPE}" in
-    g6e.xlarge|g6e.2xlarge) NODEPOOL="gpum" ;;
-    g6e.12xlarge)            NODEPOOL="gpul" ;;
-    p5.4xlarge)              NODEPOOL="h100" ;;
-    *)                       NODEPOOL="gpus" ;;
+    g6e.xlarge|g6e.2xlarge)        NODEPOOL="gpum" ;;
+    g6e.12xlarge)                  NODEPOOL="gpul" ;;
+    p5.4xlarge)                    NODEPOOL="h100" ;;
+    p4d.24xlarge)                  NODEPOOL="a100-40" ;;
+    p4de.24xlarge)                 NODEPOOL="a100-80" ;;
+    *)                             NODEPOOL="gpus" ;;
   esac
 fi
 
 # Max resources per instance type (leaving ~10% for system overhead)
 GPU_COUNT=1; CPU="3";  MEM="12Gi"   # defaults (g6.xlarge)
 case "${INSTANCE_TYPE}" in
-  g6e.xlarge)   GPU_COUNT=1; CPU="3";  MEM="26Gi"  ;;
-  g6e.2xlarge)  GPU_COUNT=1; CPU="7";  MEM="54Gi"  ;;
-  g6e.12xlarge) GPU_COUNT=4; CPU="44"; MEM="340Gi" ;;
-  p5.4xlarge)   GPU_COUNT=1; CPU="14"; MEM="160Gi" ;;
+  g6e.xlarge)              GPU_COUNT=1; CPU="3";  MEM="26Gi"   ;;
+  g6e.2xlarge)             GPU_COUNT=1; CPU="7";  MEM="54Gi"   ;;
+  g6e.12xlarge)            GPU_COUNT=4; CPU="44"; MEM="340Gi"  ;;
+  p5.4xlarge)              GPU_COUNT=1; CPU="14"; MEM="160Gi"  ;;
+  p4d.24xlarge)  GPU_COUNT=8; CPU="90"; MEM="1000Gi" ;;
+  p4de.24xlarge) GPU_COUNT=8; CPU="90"; MEM="1000Gi" ;;
 esac
 
 IS_RUN=false
@@ -66,6 +74,7 @@ patch_manifest() {
   local env_inject="export NPROC=${GPU_COUNT}"
   [ "${FULLRUN}"   = "true" ] && env_inject="${env_inject}; export FULLRUN=1"
   [ "${SMOKETEST}" = "true" ] && env_inject="${env_inject}; export SMOKETEST=1"
+  [ "${BARE}"      = "true" ] && env_inject="${env_inject}; export BARE_SHELL=1"
   [ -n "${WANDB_KEY}" ]       && env_inject="${env_inject}; export WANDB_API_KEY=${WANDB_KEY}"
   echo "${manifest}" | sed "s|true  # env-inject-placeholder|${env_inject}|"
 }
