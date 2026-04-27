@@ -9,6 +9,12 @@ readonly NS="${NAMESPACE:-robot-learning}"
 readonly DIVISIONS=(robot-learning humanoid)
 readonly LABEL_SELECTOR="ethrobotics.ch/managed-by=launch"
 
+# All resource kinds launch-new can produce. Order matters for delete (controllers
+# before owned objects), but with --ignore-not-found duplicates are harmless.
+# InferenceService is only present on clusters with KServe installed; the
+# delete commands swallow the "no resources" / unknown-kind errors.
+readonly KINDS=(trainjob job deployment inferenceservice service)
+
 # =============================================================================
 # Helpers
 # =============================================================================
@@ -72,27 +78,15 @@ list_jobs() {
   for ns in "${DIVISIONS[@]}"; do
     ns_exists "$ns" || continue
 
-    local tjobs=$(kubectl -n "$ns" get trainjob -l "$LABEL_SELECTOR" --no-headers 2>/dev/null || true)
-    local jobs=$(kubectl -n "$ns" get job -l "$LABEL_SELECTOR" --no-headers 2>/dev/null || true)
-    local depls=$(kubectl -n "$ns" get deployment -l "$LABEL_SELECTOR" --no-headers 2>/dev/null || true)
-
-    if [[ -n "$tjobs" ]]; then
-      found=1
-      echo "  $ns TrainJobs:"
-      echo "$tjobs" | awk '{print "    " $1}'
-    fi
-
-    if [[ -n "$jobs" ]]; then
-      found=1
-      echo "  $ns Jobs:"
-      echo "$jobs" | awk '{print "    " $1}'
-    fi
-
-    if [[ -n "$depls" ]]; then
-      found=1
-      echo "  $ns Deployments:"
-      echo "$depls" | awk '{print "    " $1}'
-    fi
+    local kind rows
+    for kind in "${KINDS[@]}"; do
+      rows=$(kubectl -n "$ns" get "$kind" -l "$LABEL_SELECTOR" --no-headers 2>/dev/null || true)
+      if [[ -n "$rows" ]]; then
+        found=1
+        printf '  %s %ss:\n' "$ns" "$kind"
+        echo "$rows" | awk '{print "    " $1}'
+      fi
+    done
   done
 
   [[ "$found" == 0 ]] && echo "  No launch-new jobs found."
@@ -106,9 +100,21 @@ delete_one() {
   local name="$1"
   log "Deleting $name in $NS..."
 
-  kubectl -n "$NS" delete --ignore-not-found trainjob "$name" 2>/dev/null || true
-  kubectl -n "$NS" delete --ignore-not-found job "$name" 2>/dev/null || true
-  kubectl -n "$NS" delete --ignore-not-found deployment "$name" 2>/dev/null || true
+  # Delete by exact name across every kind launch-new might create.
+  # Stderr is suppressed because some clusters lack KServe (unknown kind
+  # "InferenceService"), which is fine.
+  local kind
+  for kind in "${KINDS[@]}"; do
+    kubectl -n "$NS" delete --ignore-not-found "$kind" "$name" 2>/dev/null || true
+  done
+
+  # Delete any extra resources owned by this job by label (e.g. additional
+  # Services that weren't named exactly $JOB_NAME).
+  for kind in "${KINDS[@]}"; do
+    kubectl -n "$NS" delete --ignore-not-found "$kind" \
+      -l "${LABEL_SELECTOR},ethrobotics.ch/job-name=${name}" 2>/dev/null || true
+  done
+
   kubectl -n "$NS" delete --ignore-not-found configmap "${name}-files" 2>/dev/null || true
 }
 
@@ -117,20 +123,28 @@ delete_mine() {
   local hash=$(launcher_hash "$lid")
   local sel="${LABEL_SELECTOR},ethrobotics.ch/launcher-hash=${hash}"
 
-  local tjobs=$(kubectl -n "$NS" get trainjob -l "$sel" -o name 2>/dev/null || true)
-  local jobs=$(kubectl -n "$NS" get job -l "$sel" -o name 2>/dev/null || true)
-  local depls=$(kubectl -n "$NS" get deployment -l "$sel" -o name 2>/dev/null || true)
+  local found=0
+  local kind names
+  for kind in "${KINDS[@]}"; do
+    names=$(kubectl -n "$NS" get "$kind" -l "$sel" -o name 2>/dev/null || true)
+    [[ -n "$names" ]] && found=1
+  done
   local cmaps=$(kubectl -n "$NS" get configmap -l "$sel" -o name 2>/dev/null || true)
+  [[ -n "$cmaps" ]] && found=1
 
-  if [[ -z "$tjobs" && -z "$jobs" && -z "$depls" && -z "$cmaps" ]]; then
+  if [[ "$found" == 0 ]]; then
     log "No jobs found for: $lid ($hash)"
     return
   fi
 
   log "Deleting jobs for: $lid ($hash)"
-  [[ -n "$tjobs" ]] && echo "$tjobs" | sed 's/^/  /' && kubectl -n "$NS" delete --ignore-not-found trainjob -l "$sel"
-  [[ -n "$jobs" ]] && echo "$jobs" | sed 's/^/  /' && kubectl -n "$NS" delete --ignore-not-found job -l "$sel"
-  [[ -n "$depls" ]] && echo "$depls" | sed 's/^/  /' && kubectl -n "$NS" delete --ignore-not-found deployment -l "$sel"
+  for kind in "${KINDS[@]}"; do
+    names=$(kubectl -n "$NS" get "$kind" -l "$sel" -o name 2>/dev/null || true)
+    if [[ -n "$names" ]]; then
+      echo "$names" | sed 's/^/  /'
+      kubectl -n "$NS" delete --ignore-not-found "$kind" -l "$sel" 2>/dev/null || true
+    fi
+  done
   [[ -n "$cmaps" ]] && kubectl -n "$NS" delete --ignore-not-found configmap -l "$sel"
 }
 
@@ -141,9 +155,10 @@ delete_all() {
   [[ "$reply" =~ ^[Yy] ]] || { log "Aborted."; exit 1; }
 
   log "Deleting all launch-new resources in $ns..."
-  kubectl -n "$ns" delete --ignore-not-found trainjob -l "$LABEL_SELECTOR"
-  kubectl -n "$ns" delete --ignore-not-found job -l "$LABEL_SELECTOR"
-  kubectl -n "$ns" delete --ignore-not-found deployment -l "$LABEL_SELECTOR"
+  local kind
+  for kind in "${KINDS[@]}"; do
+    kubectl -n "$ns" delete --ignore-not-found "$kind" -l "$LABEL_SELECTOR" 2>/dev/null || true
+  done
   kubectl -n "$ns" delete --ignore-not-found configmap -l "$LABEL_SELECTOR"
 }
 

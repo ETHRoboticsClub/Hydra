@@ -1,0 +1,145 @@
+# ACT Inference Server — long-running Deployment + Service (multi-doc YAML).
+#
+# Demonstrates that ./launch-new can deploy any Kubernetes resource kind, not
+# just TrainJob/Job. Variables in {{BRACKETS}} are substituted by ./launch-new;
+# everything between two `---` lines is applied as a separate document.
+#
+# Use:    ./launch-new gpus ./robot-learning/act-inference
+# Reach:  kubectl -n robot-learning port-forward svc/<job-name> 8080:80
+#         curl http://localhost:8080/healthz
+# Kill:   ./kill-new <job-name>            (cleans Deployment, Service, ConfigMap)
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{JOB_NAME}}
+  namespace: {{NAMESPACE}}
+  labels:
+    app: {{JOB_NAME}}
+    ethrobotics.ch/managed-by: launch
+    ethrobotics.ch/job-name: {{JOB_NAME}}
+    ethrobotics.ch/profile: {{PROFILE}}
+    ethrobotics.ch/launcher-hash: {{LAUNCHER_HASH}}
+  annotations:
+    ethrobotics.ch/launcher: '{{LAUNCHER_ID}}'
+    ethrobotics.ch/user: '{{USER}}'
+spec:
+  replicas: {{REPLICAS}}
+  selector:
+    matchLabels:
+      app: {{JOB_NAME}}
+  template:
+    metadata:
+      labels:
+        app: {{JOB_NAME}}
+        ethrobotics.ch/job-name: {{JOB_NAME}}
+      annotations:
+        ethrobotics.ch/launcher: '{{LAUNCHER_ID}}'
+        ethrobotics.ch/user: '{{USER}}'
+    spec:
+      serviceAccountName: {{SERVICE_ACCOUNT}}
+      nodeSelector:
+        karpenter.sh/nodepool: {{NODEPOOL}}
+        node-tier: {{NODETIER}}
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      initContainers:
+        - name: init
+          image: {{INIT_IMAGE}}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+{{INIT_SCRIPT}}
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: data
+              mountPath: /data
+            - name: job-files
+              mountPath: /job-files
+              readOnly: true
+      containers:
+        - name: server
+          image: {{IMAGE}}
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euxo pipefail
+              export HF_TOKEN="$(cat /var/run/secrets/hf/HF_TOKEN 2>/dev/null || echo '')"
+              cd /workspace && ./entrypoint.sh
+          ports:
+            - name: http
+              containerPort: 8000
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 30   # tolerate slow first-time `uv sync`
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 120
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: "{{CPU_REQUEST}}"
+              memory: "{{MEM_REQUEST}}"
+              nvidia.com/gpu: "{{GPU_REQUEST}}"
+            limits:
+              cpu: "{{CPU_LIMIT}}"
+              memory: "{{MEM_LIMIT}}"
+              nvidia.com/gpu: "{{GPU_LIMIT}}"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: data
+              mountPath: /data
+            - name: checkpoints
+              mountPath: /checkpoints
+              readOnly: true
+            - name: dshm
+              mountPath: /dev/shm
+            - name: hf-secret
+              mountPath: /var/run/secrets/hf
+              readOnly: true
+      volumes:
+        - name: workspace
+          emptyDir: {}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{DATA_PVC}}
+        - name: checkpoints
+          persistentVolumeClaim:
+            claimName: {{CHECKPOINT_PVC}}
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{SHM_SIZE}}
+        - name: hf-secret
+          secret:
+            secretName: hf-secret
+        - name: job-files
+          configMap:
+            name: {{CONFIGMAP_NAME}}
+            defaultMode: 0755
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{JOB_NAME}}
+  namespace: {{NAMESPACE}}
+  labels:
+    app: {{JOB_NAME}}
+    ethrobotics.ch/managed-by: launch
+    ethrobotics.ch/job-name: {{JOB_NAME}}
+    ethrobotics.ch/profile: {{PROFILE}}
+    ethrobotics.ch/launcher-hash: {{LAUNCHER_HASH}}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{JOB_NAME}}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
