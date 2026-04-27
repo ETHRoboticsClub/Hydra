@@ -17,7 +17,10 @@ die() { echo "[launch-new] $*" >&2; exit 1; }
 # -----------------------------------------------------------------------------
 
 yval() {
-  awk -v key="$2" '$1 == key ":" {print $2; exit}' "$1"
+  # Strip a trailing CR before printing — generic.yaml/profile yamls may
+  # have CRLF endings (Windows checkout) and otherwise the CR leaks into
+  # substituted values like {{NAMESPACE}} and breaks YAML embedding.
+  awk -v key="$2" '$1 == key ":" {sub(/\r$/, "", $2); print $2; exit}' "$1"
 }
 
 load_config() {
@@ -295,9 +298,12 @@ substitute_template() {
     -e "s|{{ENTRYPOINT_PATH}}|/workspace/entrypoint.sh|g" \
     "$tpl" > "$tmp_out" || { echo "[launch-new] sed substitution failed" >&2; rm -f "$tmp_init" "$tmp_out"; return 1; }
 
-  # Now handle the multiline INIT_SCRIPT substitution
+  # Multiline INIT_SCRIPT substitution. We only replace lines whose ONLY
+  # non-whitespace content is the placeholder — otherwise a deploy.yaml that
+  # *mentions* {{INIT_SCRIPT}} in a comment would get its comment silently
+  # blown away.
   awk -v init_file="$tmp_init" '
-    /{{INIT_SCRIPT}}/ {
+    /^[[:space:]]*\{\{INIT_SCRIPT\}\}[[:space:]]*$/ {
       while ((getline line < init_file) > 0) {
         print line
       }
@@ -424,16 +430,19 @@ main() {
     GIT_SUBPATH=${parsed[1]:-}
   fi
 
-  echo "[launch-new] Job: $JOB_NAME"
-  echo "[launch-new] Profile: $PROFILE (nodepool=$NODEPOOL, gpu=$GPU_REQ)"
+  # Status lines go to stderr so `--dry-run` can pipe a clean manifest on
+  # stdout into `kubectl apply --dry-run=server -f -` for cluster-side
+  # validation.
+  echo "[launch-new] Job: $JOB_NAME" >&2
+  echo "[launch-new] Profile: $PROFILE (nodepool=$NODEPOOL, gpu=$GPU_REQ)" >&2
   if [[ $IS_GIT == 1 ]]; then
     if [[ -n "$GIT_SUBPATH" ]]; then
-      echo "[launch-new] Git: $GIT_REPO_URL (subpath: $GIT_SUBPATH)"
+      echo "[launch-new] Git: $GIT_REPO_URL (subpath: $GIT_SUBPATH)" >&2
     else
-      echo "[launch-new] Git: $GIT_REPO_URL"
+      echo "[launch-new] Git: $GIT_REPO_URL" >&2
     fi
   else
-    echo "[launch-new] Local: $SOURCE"
+    echo "[launch-new] Local: $SOURCE" >&2
   fi
 
   # Fetch deploy.yaml (clone if needed for git URLs)
@@ -458,7 +467,8 @@ main() {
   }
 
   # Summarise resources we're about to apply (one line per document).
-  echo "[launch-new] Resources in deploy.yaml:"
+  # Goes to stderr so --dry-run leaves stdout as pure YAML.
+  echo "[launch-new] Resources in deploy.yaml:" >&2
   local doc_kind doc_name doc_count=0
   while IFS= read -r line; do
     case "$line" in
@@ -467,7 +477,7 @@ main() {
         # Only first 'name:' under metadata wins per document
         if [[ -n "$doc_kind" && -z "${doc_name:-}" ]]; then
           doc_name="${line#  name:}"; doc_name="${doc_name// /}"
-          printf '  - %s/%s\n' "$doc_kind" "$doc_name"
+          printf '  - %s/%s\n' "$doc_kind" "$doc_name" >&2
           doc_count=$((doc_count+1))
           doc_kind=""; doc_name=""
         fi
@@ -475,7 +485,7 @@ main() {
       "---")    doc_kind=""; doc_name="" ;;
     esac
   done < "$rendered"
-  [[ "$doc_count" == 0 ]] && echo "  (no documents detected — substitution likely failed)"
+  [[ "$doc_count" == 0 ]] && echo "  (no documents detected — substitution likely failed)" >&2
 
   if [[ $dry_run == 1 ]]; then
     cat "$rendered"

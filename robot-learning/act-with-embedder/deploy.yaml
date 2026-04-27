@@ -16,7 +16,7 @@
 # Kill:   ./kill-new <job-name>            (cleans Deployment + Service + Job + ConfigMap)
 #
 # NOTE: both pods share the same job folder (and therefore the same ConfigMap),
-# but each container's args choose a different *.sh script. The {{INIT_SCRIPT}}
+# but each container's args choose a different *.sh script. The init-script
 # placeholder gets the same expansion in every document — it's just shell text.
 
 # =============================================================================
