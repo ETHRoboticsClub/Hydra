@@ -1,0 +1,23 @@
+[project]
+name = "act-with-embedder"
+version = "0.1.0"
+description = "ACT training with a sidecar conditioning embedder (validation case for Hydra issue #10.3)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "transformers",
+    "torch",
+    "numpy",
+    "pillow",
+    "huggingface-hub",
+    "lerobot",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+    "httpx",
+]

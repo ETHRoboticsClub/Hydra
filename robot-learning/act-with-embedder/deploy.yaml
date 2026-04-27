@@ -1,0 +1,273 @@
+# Training + sidecar embedder — three resources in one launch.
+#
+# This is the validation case Nico called out in #10:
+# "separate instance for conditioning embeddings". One ./launch-new invocation
+# brings up:
+#   1. Deployment   — long-running embedder server (own GPU)
+#   2. Service      — DNS name the trainer uses to reach the embedder
+#   3. Job          — the actual training run, which calls the embedder via
+#                     the Service for each batch
+#
+# An initContainer in the training Job blocks until the embedder is healthy,
+# so the trainer never races the embedder's first model load.
+#
+# Use:    ./launch-new gpus ./robot-learning/act-with-embedder
+# Watch:  kubectl -n robot-learning get pods -l ethrobotics.ch/job-name=<job-name>
+# Kill:   ./kill-new <job-name>            (cleans Deployment + Service + Job + ConfigMap)
+#
+# NOTE: both pods share the same job folder (and therefore the same ConfigMap),
+# but each container's args choose a different *.sh script. The {{INIT_SCRIPT}}
+# placeholder gets the same expansion in every document — it's just shell text.
+
+# =============================================================================
+# 1. Embedder Deployment — long-running vision encoder, exposes :8001
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{JOB_NAME}}-embedder
+  namespace: {{NAMESPACE}}
+  labels:
+    app: {{JOB_NAME}}-embedder
+    ethrobotics.ch/managed-by: launch
+    ethrobotics.ch/job-name: {{JOB_NAME}}
+    ethrobotics.ch/role: embedder
+    ethrobotics.ch/profile: {{PROFILE}}
+    ethrobotics.ch/launcher-hash: {{LAUNCHER_HASH}}
+  annotations:
+    ethrobotics.ch/launcher: '{{LAUNCHER_ID}}'
+    ethrobotics.ch/user: '{{USER}}'
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{JOB_NAME}}-embedder
+  template:
+    metadata:
+      labels:
+        app: {{JOB_NAME}}-embedder
+        ethrobotics.ch/job-name: {{JOB_NAME}}
+        ethrobotics.ch/role: embedder
+    spec:
+      serviceAccountName: {{SERVICE_ACCOUNT}}
+      nodeSelector:
+        karpenter.sh/nodepool: {{NODEPOOL}}
+        node-tier: {{NODETIER}}
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      initContainers:
+        - name: init
+          image: {{INIT_IMAGE}}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+{{INIT_SCRIPT}}
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: data
+              mountPath: /data
+            - name: job-files
+              mountPath: /job-files
+              readOnly: true
+      containers:
+        - name: embedder
+          image: {{IMAGE}}
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euxo pipefail
+              cd /workspace && ./embedder.sh
+          ports:
+            - name: http
+              containerPort: 8001
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 60   # `uv sync` on cold start can be slow
+          resources:
+            requests:
+              cpu: "{{CPU_REQUEST}}"
+              memory: "{{MEM_REQUEST}}"
+              nvidia.com/gpu: "{{GPU_REQUEST}}"
+            limits:
+              cpu: "{{CPU_LIMIT}}"
+              memory: "{{MEM_LIMIT}}"
+              nvidia.com/gpu: "{{GPU_LIMIT}}"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: data
+              mountPath: /data
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: workspace
+          emptyDir: {}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{DATA_PVC}}
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{SHM_SIZE}}
+        - name: job-files
+          configMap:
+            name: {{CONFIGMAP_NAME}}
+            defaultMode: 0755
+---
+# =============================================================================
+# 2. Embedder Service — stable DNS for the trainer
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{JOB_NAME}}-embedder
+  namespace: {{NAMESPACE}}
+  labels:
+    app: {{JOB_NAME}}-embedder
+    ethrobotics.ch/managed-by: launch
+    ethrobotics.ch/job-name: {{JOB_NAME}}
+    ethrobotics.ch/role: embedder
+spec:
+  type: ClusterIP
+  selector:
+    app: {{JOB_NAME}}-embedder
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# =============================================================================
+# 3. Training Job — the consumer of the embedder
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{JOB_NAME}}
+  namespace: {{NAMESPACE}}
+  labels:
+    app: {{JOB_NAME}}
+    ethrobotics.ch/managed-by: launch
+    ethrobotics.ch/job-name: {{JOB_NAME}}
+    ethrobotics.ch/role: trainer
+    ethrobotics.ch/profile: {{PROFILE}}
+    ethrobotics.ch/launcher-hash: {{LAUNCHER_HASH}}
+  annotations:
+    ethrobotics.ch/launcher: '{{LAUNCHER_ID}}'
+    ethrobotics.ch/user: '{{USER}}'
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{JOB_NAME}}
+        ethrobotics.ch/job-name: {{JOB_NAME}}
+        ethrobotics.ch/role: trainer
+      annotations:
+        ethrobotics.ch/launcher: '{{LAUNCHER_ID}}'
+        ethrobotics.ch/user: '{{USER}}'
+    spec:
+      serviceAccountName: {{SERVICE_ACCOUNT}}
+      nodeSelector:
+        karpenter.sh/nodepool: {{NODEPOOL}}
+        node-tier: {{NODETIER}}
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      restartPolicy: Never
+      initContainers:
+        - name: init
+          image: {{INIT_IMAGE}}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+{{INIT_SCRIPT}}
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: data
+              mountPath: /data
+            - name: job-files
+              mountPath: /job-files
+              readOnly: true
+        - name: wait-for-embedder
+          image: curlimages/curl:8.10.1
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              echo "Waiting for embedder Service to come up..."
+              i=0
+              until curl -sSf "http://{{JOB_NAME}}-embedder.{{NAMESPACE}}.svc.cluster.local/healthz" >/dev/null; do
+                i=$((i+1))
+                if [ "$i" -gt 180 ]; then
+                  echo "Embedder did not become healthy within 15 minutes" >&2
+                  exit 1
+                fi
+                sleep 5
+              done
+              echo "Embedder is healthy."
+      containers:
+        - name: trainer
+          image: {{IMAGE}}
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euxo pipefail
+              export WANDB_API_KEY="$(cat /var/run/secrets/wandb/WANDB_API_KEY 2>/dev/null || echo '')"
+              export HF_TOKEN="$(cat /var/run/secrets/hf/HF_TOKEN 2>/dev/null || echo '')"
+              cd /workspace && ./train.sh
+          env:
+            - name: EMBEDDER_URL
+              value: "http://{{JOB_NAME}}-embedder.{{NAMESPACE}}.svc.cluster.local/embed"
+          resources:
+            requests:
+              cpu: "{{CPU_REQUEST}}"
+              memory: "{{MEM_REQUEST}}"
+              nvidia.com/gpu: "{{GPU_REQUEST}}"
+            limits:
+              cpu: "{{CPU_LIMIT}}"
+              memory: "{{MEM_LIMIT}}"
+              nvidia.com/gpu: "{{GPU_LIMIT}}"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: data
+              mountPath: /data
+            - name: checkpoints
+              mountPath: /checkpoints
+            - name: dshm
+              mountPath: /dev/shm
+            - name: wandb-secret
+              mountPath: /var/run/secrets/wandb
+              readOnly: true
+            - name: hf-secret
+              mountPath: /var/run/secrets/hf
+              readOnly: true
+      volumes:
+        - name: workspace
+          emptyDir: {}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{DATA_PVC}}
+        - name: checkpoints
+          persistentVolumeClaim:
+            claimName: {{CHECKPOINT_PVC}}
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{SHM_SIZE}}
+        - name: wandb-secret
+          secret:
+            secretName: wandb-secret
+        - name: hf-secret
+          secret:
+            secretName: hf-secret
+        - name: job-files
+          configMap:
+            name: {{CONFIGMAP_NAME}}
+            defaultMode: 0755

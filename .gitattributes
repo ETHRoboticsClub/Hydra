@@ -1,0 +1,31 @@
+# Force LF line endings for everything that runs inside Linux pods or that
+# Kubernetes parses as YAML. Without this, a Windows checkout would ship CRLF
+# files into ConfigMaps and bash/kubectl would choke on the trailing `\r`.
+
+* text=auto eol=lf
+
+# Shell scripts must always be LF.
+*.sh    text eol=lf
+launch        text eol=lf
+launch-new    text eol=lf
+launch-old    text eol=lf
+kill          text eol=lf
+kill-new      text eol=lf
+kill-old      text eol=lf
+create        text eol=lf
+update-volumes text eol=lf
+
+# Kubernetes manifests must always be LF.
+*.yaml  text eol=lf
+*.yml   text eol=lf
+
+# Python.
+*.py    text eol=lf
+
+# Binary blobs (just in case anyone commits one).
+*.png   binary
+*.jpg   binary
+*.tar   binary
+*.tar.gz binary
+*.parquet binary
+*.mp4   binary

@@ -147,8 +147,13 @@ parse_git_source() {
 
 validate_folder() {
   [[ -d "$1" ]] || die "Not a directory: $1"
-  [[ -f "$1/entrypoint.sh" ]] || die "Missing entrypoint.sh in $1"
   [[ -f "$1/deploy.yaml" ]] || die "Missing deploy.yaml in $1 (folder must contain deploy.yaml spec)"
+  # Need at least one shell script to run — but multi-instance deploys can
+  # use embedder.sh / train.sh / etc. instead of (or alongside) entrypoint.sh.
+  shopt -s nullglob
+  local sh_files=("$1"/*.sh)
+  shopt -u nullglob
+  [[ ${#sh_files[@]} -gt 0 ]] || die "No *.sh entrypoints found in $1 (need at least one shell script)"
 }
 
 # Clone repo and return path to deploy.yaml (handles subpaths)
@@ -188,12 +193,22 @@ fetch_deploy_yaml() {
 # -----------------------------------------------------------------------------
 
 make_init_local() {
+  # Copy every file bundled into the ConfigMap (all top-level files in the job
+  # folder, minus deploy.yaml) into /workspace. This is what makes the
+  # local-folder workflow useful — without it, server.py / pyproject.toml /
+  # configs/ would never reach the pod.
   cat <<'EOF'
 set -euxo pipefail
 mkdir -p /workspace
-cp /job-files/entrypoint.sh /workspace/
-chmod +x /workspace/entrypoint.sh
+cp -rL /job-files/. /workspace/
+# chmod every top-level shell script — multi-instance deploys can have
+# embedder.sh / train.sh / etc. alongside entrypoint.sh and any of them
+# might be the container's command.
+chmod +x /workspace/*.sh 2>/dev/null || true
 EOF
+  # init.sh, if present, runs in the initContainer AFTER files are copied —
+  # use it for one-shot setup that should happen before the main container
+  # (e.g. cache warming, cert installation).
   [[ -f "$1/init.sh" ]] && cat "$1/init.sh"
 }
 
@@ -301,8 +316,27 @@ substitute_template() {
 
 create_configmap() {
   local name="$1" dir="$2"
-  local args=("--from-file=entrypoint.sh=${dir}/entrypoint.sh")
-  [[ -f "${dir}/init.sh" ]] && args+=("--from-file=init.sh=${dir}/init.sh")
+  local args=()
+
+  # Bundle every regular top-level file in the job folder, except the deploy
+  # spec itself (we already substituted that) and editor/state cruft. This
+  # gives entrypoint.sh access to server.py, pyproject.toml, configs, etc.
+  # NOTE: ConfigMaps are limited to ~1MB and don't recurse into subfolders.
+  # If you need bigger artifacts or subdirs, fetch them from S3/git in
+  # entrypoint.sh.
+  local f base
+  shopt -s nullglob
+  for f in "$dir"/*; do
+    [[ -f "$f" ]] || continue
+    base=$(basename "$f")
+    case "$base" in
+      deploy.yaml|.*|*.swp) continue ;;
+    esac
+    args+=("--from-file=${base}=${f}")
+  done
+  shopt -u nullglob
+
+  [[ ${#args[@]} -gt 0 ]] || die "No files to bundle in $dir (need at least entrypoint.sh)"
 
   kubectl create configmap "${name}-files" -n "$NAMESPACE" "${args[@]}" --dry-run=client -o yaml | kubectl apply -f -
 
@@ -412,20 +446,51 @@ main() {
     template_file="$SOURCE/deploy.yaml"
   fi
 
-  # Substitute and output
+  # Substitute into a temp file so we can both summarise and apply (one
+  # substitution pass — nice for multi-document deploy.yaml: each document
+  # gets the same variable expansion, including {{INIT_SCRIPT}}).
+  local rendered
+  rendered=$(mktemp)
+  substitute_template "$template_file" > "$rendered" || {
+    rm -f "$rendered"
+    [[ -n "$GIT_TMPDIR" ]] && rm -rf "$GIT_TMPDIR"
+    die "Template rendering failed"
+  }
+
+  # Summarise resources we're about to apply (one line per document).
+  echo "[launch-new] Resources in deploy.yaml:"
+  local doc_kind doc_name doc_count=0
+  while IFS= read -r line; do
+    case "$line" in
+      kind:*)   doc_kind="${line#kind:}";   doc_kind="${doc_kind// /}" ;;
+      "  name:"*)
+        # Only first 'name:' under metadata wins per document
+        if [[ -n "$doc_kind" && -z "${doc_name:-}" ]]; then
+          doc_name="${line#  name:}"; doc_name="${doc_name// /}"
+          printf '  - %s/%s\n' "$doc_kind" "$doc_name"
+          doc_count=$((doc_count+1))
+          doc_kind=""; doc_name=""
+        fi
+        ;;
+      "---")    doc_kind=""; doc_name="" ;;
+    esac
+  done < "$rendered"
+  [[ "$doc_count" == 0 ]] && echo "  (no documents detected — substitution likely failed)"
+
   if [[ $dry_run == 1 ]]; then
-    substitute_template "$template_file"
+    cat "$rendered"
+    rm -f "$rendered"
     [[ -n "$GIT_TMPDIR" ]] && rm -rf "$GIT_TMPDIR"
     exit 0
   fi
 
-  # Create ConfigMap for local sources (contains entrypoint.sh and optional init.sh)
+  # Create ConfigMap for local sources (contains entrypoint.sh and optional init.sh).
+  # Skipped for git URLs because the init script clones the repo at runtime.
   [[ $IS_GIT == 0 ]] && create_configmap "$JOB_NAME" "$SOURCE"
 
-  # Apply manifest
-  substitute_template "$template_file" | kubectl apply -f -
+  kubectl apply -f "$rendered"
+  rm -f "$rendered"
 
-  # Cleanup temp clone if we made one
   [[ -n "$GIT_TMPDIR" ]] && rm -rf "$GIT_TMPDIR"
 
   echo "[launch-new] Applied. Kill with: ./kill-new $JOB_NAME"
