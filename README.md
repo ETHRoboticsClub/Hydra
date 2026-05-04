@@ -13,6 +13,8 @@ For instructions on how to use the cluster: [Hercules Wiki](https://github.com/E
 The versions of these scripts with the `-new` suffix are experimental, providing a user interface. We plan to merge these features into the regular scripts in the future.
 
 ## Reading
+### Overview
+[Why Kubernetes](https://kubernetes.io/docs/concepts/overview/)
 
 ### Storage and Services
 [PVs and PVCs (Storage)](https://kubernetes.io/docs/concepts/storage/persistent-volumes/)
