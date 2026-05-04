@@ -1,4 +1,7 @@
+![Hydra Banner](.github/banner.webp)
+
 # Centralized Deployment Repository
+
 Hydra contains the tooling and configuration files to deploy workloads to the Kubernetes cluster. Each division has their own subfolder to store their deployment files.
 
 For instructions on how to use the cluster: [Hercules Wiki](https://github.com/ETHRoboticsClub/Hercules/wiki/Deploying)
