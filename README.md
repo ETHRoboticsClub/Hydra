@@ -10,7 +10,7 @@ For instructions on how to use the cluster: [Hercules Wiki](https://github.com/E
 
 `create`: Utility that allows creating PVCs (storage); jobs and deployments; and launching an interactive session for debugging.
 
-The versions of these scripts with the `-new` suffix are experimental, providing a user interface. We plan to merge these features into the regular scripts in the future.
+The versions of these scripts with the `-new` suffix are experimental. We plan to merge these features into the regular scripts in the future.
 
 ## Reading
 ### Overview

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+trap 'python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/report_bug.py"' ERR
+
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly LAUNCH_D="${SCRIPT_DIR}/launch.d"
 readonly CONFIG="${LAUNCH_D}/generic.yaml"

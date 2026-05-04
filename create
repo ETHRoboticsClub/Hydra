@@ -1658,6 +1658,15 @@ class NewApp(App):
         self.push_screen(NamespaceScreen(), callback=on_namespace_select)
 
 
+def _report_bug_and_exit():
+    """Print bug report message and exit."""
+    script_dir = Path(__file__).parent.resolve()
+    report_bug_script = script_dir / "report_bug.py"
+    if report_bug_script.exists():
+        subprocess.run(["python3", str(report_bug_script)], check=False)
+    sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Interactive TUI for creating Kubernetes resources",
@@ -1672,8 +1681,12 @@ def main():
     if args.context:
         set_context(args.context)
 
-    app = NewApp(namespace=args.namespace)
-    app.run()
+    try:
+        app = NewApp(namespace=args.namespace)
+        app.run()
+    except Exception as e:
+        print(f"\n[hydra] Unexpected error: {e}", file=sys.stderr)
+        _report_bug_and_exit()
 
     # Check if we need to exec into a pod after exit
     if NewApp._exec_command:
@@ -1681,7 +1694,11 @@ def main():
         time.sleep(0.1)
         # Run kubectl exec
         print(f"\n[hydra] Connecting to pod...\n")
-        result = subprocess.run(NewApp._exec_command)
+        try:
+            result = subprocess.run(NewApp._exec_command)
+        except Exception as e:
+            print(f"\n[hydra] Error exec-ing into pod: {e}", file=sys.stderr)
+            _report_bug_and_exit()
 
         # After exec exits, prompt for pod cleanup
         pod_name = None
@@ -1702,7 +1719,10 @@ def main():
 
         if pod_name and namespace:
             # Check if pod still exists
-            rc, _, _ = run_kubectl(["get", "pod", pod_name, "-n", namespace])
+            try:
+                rc, _, _ = run_kubectl(["get", "pod", pod_name, "-n", namespace])
+            except Exception:
+                rc = 1
             if rc == 0:
                 print(f"\n[hydra] Interactive session ended.")
                 print(f"[hydra] Pod '{pod_name}' is still running.")
@@ -1734,4 +1754,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n[hydra] Interrupted by user")
+        sys.exit(0)
+    except Exception as e:
+        print(f"\n[hydra] Unexpected error: {e}", file=sys.stderr)
+        _report_bug_and_exit()
