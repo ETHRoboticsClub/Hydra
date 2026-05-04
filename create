@@ -44,6 +44,14 @@ except ImportError:
     print("Install with: pip install textual rich")
     sys.exit(1)
 
+
+class Spacer(Static):
+    """Reusable vertical spacer component."""
+    def __init__(self, height: int = 1):
+        super().__init__("", classes=f"spacer-{height}")
+        self.styles.height = height
+
+
 # Configuration
 DOTFILE_NAME = ".new-config"
 SCRIPT_DIR = Path(__file__).parent.resolve()
@@ -452,14 +460,14 @@ class MainMenuScreen(Screen):
         yield Container(
             Label("Kubernetes Resource Creator", classes="title"),
             Label(f"Cluster: [bold]{cluster}[/bold] | Namespace: [bold]{self.start_namespace}[/bold]", id="ns-label"),
-            Static(""),
+            Spacer(),
             Label("Select an action:", classes="section-label"),
             Horizontal(
                 Button("1. New PVC", id="btn-pvc", variant="primary"),
                 Button("2. New Deployment/TrainJob", id="btn-deploy", variant="primary"),
                 Button("3. Interactive Session", id="btn-interactive", variant="primary"),
             ),
-            Static(""),
+            Spacer(),
             Horizontal(
                 Button("Change Context", id="btn-ctx", variant="default"),
                 Button("Change Namespace", id="btn-ns", variant="default"),
@@ -545,7 +553,11 @@ class PVCScreen(Screen):
             Input(placeholder="10Gi", value="10Gi", id="pvc-size"),
             Label("Access Mode:"),
             Select(
-                [("ReadWriteOnce", "ReadWriteOnce"), ("ReadWriteMany", "ReadWriteMany"), ("ReadOnlyMany", "ReadOnlyMany")],
+                [
+                    ("ReadWriteOnce (RWO) - Single node read/write", "ReadWriteOnce"),
+                    ("ReadWriteMany (RWX) - Multiple nodes read/write", "ReadWriteMany"),
+                    ("ReadOnlyMany (ROX) - Multiple nodes read-only", "ReadOnlyMany"),
+                ],
                 value="ReadWriteOnce",
                 id="pvc-access"
             ),
@@ -557,7 +569,7 @@ class PVCScreen(Screen):
             ),
             Label("Output configuration to:"),
             Input(placeholder="./pvc-manifests", value=".", id="pvc-folder"),
-            Static(""),
+            Spacer(),
             Horizontal(
                 Button("Generate", variant="primary", id="generate-btn"),
                 Button("Back", variant="default", id="back-btn"),
@@ -687,8 +699,11 @@ class PVCSelectScreen(Screen):
         yield Header(show_clock=True)
         yield Container(
             Label(f"Select PVCs to mount (namespace: {self.namespace})", classes="title"),
+            Spacer(),
             Label("Available PVCs:") if self.pvcs else Label("No PVCs found in namespace."),
+            Spacer(),
             *self._build_pvc_list(),
+            Spacer(),
             Horizontal(
                 Button("Confirm Selection", variant="primary", id="confirm-btn"),
                 Button("Create New PVC First", variant="default", id="new-pvc-btn"),
@@ -751,6 +766,7 @@ class DeploymentScreen(Screen):
                 RadioButton("TrainJob", id="res-trainjob"),
                 id="resource-type"
             ),
+            Spacer(),
             Label("Node Tier (determines resources):"),
             Select(
                 [("Loading...", "none")],
@@ -763,10 +779,9 @@ class DeploymentScreen(Screen):
             Input(placeholder="e.g., pytorch/pytorch:2.0.0-cuda11.7-cudnn8-runtime", value=self.defaults.get("image", ""), id="image"),
             Label("Entrypoint Command (bash):"),
             TextArea(id="entrypoint", language="bash", text="#!/bin/bash\nset -euxo pipefail\n\necho 'Hello, World!'\n"),
-            Horizontal(
-                Button("Select PVCs to Mount", id="pvc-btn"),
-                Label(f"Selected: {len(self.selected_pvcs)} PVCs", id="pvc-label"),
-            ),
+            Label(f"Selected PVCs: {len(self.selected_pvcs)}", id="pvc-label"),
+            Button("Select PVCs to Mount", id="pvc-btn"),
+            Spacer(),
             Label("Instance Type (for nodepool selection):"),
             Select(
                 [(f"{p[0]} - {p[1]}", p[0]) for p in self.profiles] if self.profiles else [("default", "default")],
@@ -775,7 +790,7 @@ class DeploymentScreen(Screen):
             ),
             Label("Output configuration to:"),
             Input(placeholder="./my-job", value=".", id="output-folder"),
-            Static(""),
+            Spacer(),
             Horizontal(
                 Button("Preview & Confirm", variant="primary", id="preview-btn"),
                 Button("Back", variant="default", id="back-btn"),
@@ -824,7 +839,7 @@ class DeploymentScreen(Screen):
             if pvcs is not None:
                 self.selected_pvcs = pvcs
                 label = self.query_one("#pvc-label", Label)
-                label.update(f"Selected: {len(self.selected_pvcs)} PVCs")
+                label.update(f"Selected PVCs: {len(self.selected_pvcs)}")
 
         self.app.push_screen(PVCSelectScreen(self.namespace, self.selected_pvcs), callback=on_select)
 
@@ -1122,6 +1137,7 @@ class InteractiveScreen(Screen):
         yield Header(show_clock=True)
         yield Container(
             Label(f"New Interactive Session (namespace: {self.namespace})", classes="title"),
+            Spacer(),
             Label("Node Tier (determines resources):"),
             Select(
                 [("Loading...", "none")],
@@ -1134,11 +1150,9 @@ class InteractiveScreen(Screen):
             Input(placeholder="interactive-xxx (auto-generated)", id="pod-name"),
             Label("Command:"),
             Input(placeholder="/bin/bash", value="/bin/bash", id="command"),
-            Horizontal(
-                Button("Select PVCs to Mount", id="pvc-btn"),
-                Label(f"Selected: {len(self.selected_pvcs)} PVCs", id="pvc-label"),
-            ),
-            Static(""),
+            Label(f"Selected PVCs: {len(self.selected_pvcs)}", id="pvc-label"),
+            Button("Select PVCs to Mount", id="pvc-btn"),
+            Spacer(),
             Horizontal(
                 Button("Launch & Exec", variant="primary", id="launch-btn"),
                 Button("Back", variant="default", id="back-btn"),
@@ -1188,7 +1202,7 @@ class InteractiveScreen(Screen):
             if pvcs is not None:
                 self.selected_pvcs = pvcs
                 label = self.query_one("#pvc-label", Label)
-                label.update(f"Selected: {len(self.selected_pvcs)} PVCs")
+                label.update(f"Selected PVCs: {len(self.selected_pvcs)}")
 
         self.app.push_screen(PVCSelectScreen(self.namespace, self.selected_pvcs), callback=on_select)
 
@@ -1578,6 +1592,11 @@ class NewApp(App):
     Horizontal { height: auto; align: center middle; }
     Checkbox { margin: 0 1; }
     .section-label { margin: 1 0; text-style: bold; }
+    #pvc-label { margin: 1 0; }
+    .hint { text-style: dim; margin: 0; }
+    #image-suggest { margin-top: 0; }
+    Spacer { height: 1; }
+    #pvc-select-container Checkbox { width: 100%; }
     """
 
     def __init__(self, namespace: Optional[str] = None):
