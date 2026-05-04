@@ -1,0 +1,152 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hydra-instance-types
+  namespace: robot-learning
+  labels:
+    app: hydra
+    component: instance-types
+data:
+  # Instance types configuration for Hydra launcher
+  # Consumed by create/launch-new scripts
+  instance-types.json: |
+    {
+      "profiles": {
+        "gpus": {
+          "description": "g6.xlarge - 4 vCPU, 16Gi RAM, 1x L4 24GB",
+          "instance_type": "g6.xlarge",
+          "instance_types": ["g6.xlarge"],
+          "vcpus": 4,
+          "memory": "16Gi",
+          "cpu_allocatable": "3",
+          "memory_allocatable": "13Gi",
+          "gpu_model": "L4",
+          "gpu_memory": "24GB",
+          "nodepool": "gpus",
+          "nodetier": "gpus",
+          "gpu_request": "1",
+          "gpu_limit": "1",
+          "cpu_request": "3",
+          "cpu_limit": "3",
+          "memory_request": "13Gi",
+          "memory_limit": "13Gi",
+          "shared_memory_size": "8Gi",
+          "multi_gpu_env": "0",
+          "train_act_device_config": "train/act/configs/aws_gpus.yaml",
+          "extra_trainer_env": {}
+        },
+        "gpul": {
+          "description": "g6e.12xlarge - 48 vCPU, 384Gi RAM, 4x L40S 192GB",
+          "instance_type": "g6e.12xlarge",
+          "instance_types": ["g6e.12xlarge"],
+          "vcpus": 48,
+          "memory": "384Gi",
+          "cpu_allocatable": "44",
+          "memory_allocatable": "340Gi",
+          "gpu_model": "L40S",
+          "gpu_memory": "192GB",
+          "nodepool": "gpul",
+          "nodetier": "gpul",
+          "gpu_request": "4",
+          "gpu_limit": "4",
+          "cpu_request": "44",
+          "cpu_limit": "44",
+          "memory_request": "340Gi",
+          "memory_limit": "340Gi",
+          "shared_memory_size": "192Gi",
+          "multi_gpu_env": "1",
+          "train_act_device_config": "train/act/configs/aws_gpul.yaml",
+          "extra_trainer_env": {
+            "NVIDIA_VISIBLE_DEVICES": "all",
+            "NCCL_ASYNC_ERROR_HANDLING": "1"
+          }
+        },
+        "gpum": {
+          "description": "g6e.xlarge - 4 vCPU, 32Gi RAM, 1x L40S 48GB",
+          "instance_type": "g6e.xlarge",
+          "instance_types": ["g6e.xlarge", "g6e.2xlarge"],
+          "vcpus": 4,
+          "memory": "32Gi",
+          "cpu_allocatable": "3",
+          "memory_allocatable": "28Gi",
+          "gpu_model": "L40S",
+          "gpu_memory": "48GB",
+          "nodepool": "gpum",
+          "nodetier": "gpum",
+          "gpu_request": "1",
+          "gpu_limit": "1",
+          "cpu_request": "3",
+          "cpu_limit": "3",
+          "memory_request": "28Gi",
+          "memory_limit": "28Gi",
+          "shared_memory_size": "16Gi",
+          "multi_gpu_env": "0",
+          "train_act_device_config": "train/act/configs/aws_gpus.yaml",
+          "extra_trainer_env": {}
+        },
+        "a100": {
+          "description": "p4d.24xlarge - 96 vCPU, 1152Gi RAM, 8x A100 40GB",
+          "instance_type": "p4d.24xlarge",
+          "instance_types": ["p4d.24xlarge"],
+          "vcpus": 96,
+          "memory": "1152Gi",
+          "cpu_allocatable": "90",
+          "memory_allocatable": "1100Gi",
+          "gpu_model": "A100",
+          "gpu_memory": "320GB",
+          "nodepool": "a100-40",
+          "nodetier": "a100-40",
+          "gpu_request": "8",
+          "gpu_limit": "8",
+          "cpu_request": "90",
+          "cpu_limit": "90",
+          "memory_request": "1100Gi",
+          "memory_limit": "1100Gi",
+          "shared_memory_size": "576Gi",
+          "multi_gpu_env": "1",
+          "train_act_device_config": "train/act/configs/aws_a100.yaml",
+          "extra_trainer_env": {
+            "NVIDIA_VISIBLE_DEVICES": "all",
+            "NCCL_ASYNC_ERROR_HANDLING": "1"
+          }
+        },
+        "a100-80": {
+          "description": "p4de.24xlarge - 96 vCPU, 1152Gi RAM, 8x A100 80GB",
+          "instance_type": "p4de.24xlarge",
+          "instance_types": ["p4de.24xlarge"],
+          "vcpus": 96,
+          "memory": "1152Gi",
+          "cpu_allocatable": "90",
+          "memory_allocatable": "1100Gi",
+          "gpu_model": "A100",
+          "gpu_memory": "640GB",
+          "nodepool": "a100-80",
+          "nodetier": "a100-80",
+          "gpu_request": "8",
+          "gpu_limit": "8",
+          "cpu_request": "90",
+          "cpu_limit": "90",
+          "memory_request": "1100Gi",
+          "memory_limit": "1100Gi",
+          "shared_memory_size": "576Gi",
+          "multi_gpu_env": "1",
+          "train_act_device_config": "train/act/configs/aws_a100.yaml",
+          "extra_trainer_env": {
+            "NVIDIA_VISIBLE_DEVICES": "all",
+            "NCCL_ASYNC_ERROR_HANDLING": "1"
+          }
+        }
+      },
+      "default_resources": {
+        "none": {
+          "description": "CPU only - no GPU",
+          "nodetier": "none",
+          "cpu_request": "1",
+          "cpu_limit": "4",
+          "mem_request": "4Gi",
+          "mem_limit": "16Gi",
+          "gpu_request": "0",
+          "gpu_limit": "0"
+        }
+      }
+    }

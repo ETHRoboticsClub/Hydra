@@ -2,13 +2,13 @@
 """Print a bug report message for unplanned failures.
 
 Usage in bash:
-    some_command || { python3 report_bug.py; exit 1; }
+    some_command || { python3 lib/report_bug.py; exit 1; }
 
 Usage in Python:
     try:
         ...
     except Exception:
-        import report_bug
+        from lib import report_bug
         report_bug.main()
         raise
 """

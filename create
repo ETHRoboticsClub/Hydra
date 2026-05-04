@@ -1661,7 +1661,7 @@ class NewApp(App):
 def _report_bug_and_exit():
     """Print bug report message and exit."""
     script_dir = Path(__file__).parent.resolve()
-    report_bug_script = script_dir / "report_bug.py"
+    report_bug_script = script_dir / "lib" / "report_bug.py"
     if report_bug_script.exists():
         subprocess.run(["python3", str(report_bug_script)], check=False)
     sys.exit(1)
