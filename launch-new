@@ -10,7 +10,19 @@ readonly PROFILES_D="${LAUNCH_D}/instance_types"
 REPLICAS=1
 GIT_REF=main
 
+# Cluster context (optional - uses current context if not set)
+KUBE_CONTEXT="${KUBE_CONTEXT:-}"
+
 die() { echo "[launch-new] $*" >&2; exit 1; }
+
+# kubectl wrapper that respects KUBE_CONTEXT
+kc() {
+  if [[ -n "$KUBE_CONTEXT" ]]; then
+    kubectl --context="$KUBE_CONTEXT" "$@"
+  else
+    kubectl "$@"
+  fi
+}
 
 # -----------------------------------------------------------------------------
 # Config loading (simple awk-based YAML parsing)
@@ -304,15 +316,15 @@ create_configmap() {
   local args=("--from-file=entrypoint.sh=${dir}/entrypoint.sh")
   [[ -f "${dir}/init.sh" ]] && args+=("--from-file=init.sh=${dir}/init.sh")
 
-  kubectl create configmap "${name}-files" -n "$NAMESPACE" "${args[@]}" --dry-run=client -o yaml | kubectl apply -f -
+  kc create configmap "${name}-files" -n "$NAMESPACE" "${args[@]}" --dry-run=client -o yaml | kc apply -f -
 
-  kubectl label -n "$NAMESPACE" configmap "${name}-files" \
+  kc label -n "$NAMESPACE" configmap "${name}-files" \
     ethrobotics.ch/managed-by=launch \
     ethrobotics.ch/job-name="$name" \
     ethrobotics.ch/launcher-hash="$LAUNCHER_HASH" \
     --overwrite
 
-  kubectl annotate -n "$NAMESPACE" configmap "${name}-files" \
+  kc annotate -n "$NAMESPACE" configmap "${name}-files" \
     ethrobotics.ch/launcher="$(get_launcher_id)" \
     ethrobotics.ch/user="${USER:-unknown}" \
     --overwrite
@@ -341,6 +353,7 @@ Local paths:
   /absolute/path/to/job
 
 Environment:
+  KUBE_CONTEXT        Override kubectl context (default: current context)
   IMAGE_OVERRIDE      Override main image
   INIT_IMAGE_OVERRIDE Override init image
   NAMESPACE           Override namespace
@@ -391,6 +404,11 @@ main() {
   fi
 
   echo "[launch-new] Job: $JOB_NAME"
+  if [[ -n "$KUBE_CONTEXT" ]]; then
+    echo "[launch-new] Cluster: $KUBE_CONTEXT"
+  else
+    echo "[launch-new] Cluster: $(kubectl config current-context 2>/dev/null || echo 'unknown')"
+  fi
   echo "[launch-new] Profile: $PROFILE (nodepool=$NODEPOOL, gpu=$GPU_REQ)"
   if [[ $IS_GIT == 1 ]]; then
     if [[ -n "$GIT_SUBPATH" ]]; then
@@ -423,7 +441,7 @@ main() {
   [[ $IS_GIT == 0 ]] && create_configmap "$JOB_NAME" "$SOURCE"
 
   # Apply manifest
-  substitute_template "$template_file" | kubectl apply -f -
+  substitute_template "$template_file" | kc apply -f -
 
   # Cleanup temp clone if we made one
   [[ -n "$GIT_TMPDIR" ]] && rm -rf "$GIT_TMPDIR"
