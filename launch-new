@@ -1,9 +1,48 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-trap 'python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/report_bug.py"' ERR
-
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Track if we should show bug report on exit
+__crash_occurred=0
+
+__report_bug() {
+  cat >&2 <<'EOF'
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Something went wrong — this appears to be a bug.
+
+  To report it, please open a GitHub issue at:
+    https://github.com/ETHRoboticsClub/Hydra/issues/new
+
+  Include:
+    • The command you ran
+    • The full error output above
+    • Your OS and any relevant environment details
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EOF
+}
+
+__on_exit() {
+  local exit_code=$?
+  if [[ $__crash_occurred -eq 1 ]]; then
+    __report_bug
+  fi
+  exit $exit_code
+}
+
+trap '__on_exit' EXIT
+
+# Handle signals that indicate intentional exit (no bug report)
+__sigint_handler() {
+  echo "[launch-new] Interrupted by user" >&2
+  exit 130
+}
+trap '__sigint_handler' INT
+
+trap '' PIPE  # Ignore SIGPIPE (kubectl disconnects, etc.)
+
 readonly LAUNCH_D="${SCRIPT_DIR}/launch.d"
 readonly CONFIG="${LAUNCH_D}/generic.yaml"
 readonly PROFILES_D="${LAUNCH_D}/instance_types"
@@ -15,7 +54,11 @@ GIT_REF=main
 # Cluster context (optional - uses current context if not set)
 KUBE_CONTEXT="${KUBE_CONTEXT:-}"
 
-die() { echo "[launch-new] $*" >&2; exit 1; }
+die() {
+  echo "[launch-new] $*" >&2
+  __crash_occurred=1
+  exit 1
+}
 
 # kubectl wrapper that respects KUBE_CONTEXT
 kc() {

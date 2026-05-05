@@ -1658,16 +1658,113 @@ class NewApp(App):
         self.push_screen(NamespaceScreen(), callback=on_namespace_select)
 
 
-def _report_bug_and_exit():
-    """Print bug report message and exit."""
-    script_dir = Path(__file__).parent.resolve()
-    report_bug_script = script_dir / "lib" / "report_bug.py"
-    if report_bug_script.exists():
-        subprocess.run(["python3", str(report_bug_script)], check=False)
-    sys.exit(1)
+# Global flag to track if we should show bug report on exit
+_crash_occurred = False
 
 
-def main():
+def _report_bug():
+    """Print bug report message to stderr."""
+    msg = """\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Something went wrong — this appears to be a bug.
+
+  To report it, please open a GitHub issue at:
+    https://github.com/ETHRoboticsClub/Hydra/issues/new
+
+  Include:
+    • The command you ran
+    • The full error output above
+    • Your OS and any relevant environment details
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"""
+    print(msg, file=sys.stderr)
+
+
+def _on_program_exit():
+    """Print bug report on exit if a crash occurred. Called via atexit."""
+    if _crash_occurred:
+        _report_bug()
+
+
+# Register the exit handler
+import atexit
+atexit.register(_on_program_exit)
+
+
+def _handle_pod_session() -> int:
+    """Handle connection to pod after TUI exits. Returns exit code."""
+    if not NewApp._exec_command:
+        return 0
+
+    # Small delay to let terminal settle after Textual exits
+    time.sleep(0.1)
+    # Run kubectl to connect to pod
+    print(f"\n[hydra] Connecting to pod...\n")
+
+    try:
+        result = subprocess.run(NewApp._exec_command)
+    except FileNotFoundError:
+        print(f"\n[hydra] Error: kubectl not found", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"\n[hydra] Error connecting to pod: {e}", file=sys.stderr)
+        return 1
+
+    # After connection exits, prompt for pod cleanup
+    pod_name = None
+    namespace = None
+    for i, arg in enumerate(NewApp._exec_command):
+        if arg == "-n" or arg == "--namespace":
+            namespace = NewApp._exec_command[i + 1] if i + 1 < len(NewApp._exec_command) else None
+        if arg.startswith("-n") and len(arg) > 2:
+            namespace = arg[2:]
+
+    # Extract pod name from command: kubectl ... pod_name -- command
+    try:
+        # Find the pod name (after -n/-it flags, before --)
+        dash_dash_idx = NewApp._exec_command.index("--")
+        pod_name = NewApp._exec_command[dash_dash_idx - 1]
+    except (ValueError, IndexError):
+        pass
+
+    if pod_name and namespace:
+        # Check if pod still exists
+        try:
+            rc, _, _ = run_kubectl(["get", "pod", pod_name, "-n", namespace])
+        except Exception:
+            rc = 1
+        if rc == 0:
+            print(f"\n[hydra] Interactive session ended.")
+            print(f"[hydra] Pod '{pod_name}' is still running.")
+            print(f"\nOptions:")
+            print(f"  k) Kill pod (default - press Enter)")
+            print(f"  d) Detach (leave pod running)")
+            print(f"  r) Re-attach")
+            try:
+                choice = input("\nChoice [k]: ").strip().lower()
+                if choice in ("", "k"):
+                    print(f"[hydra] Killing pod {pod_name}...")
+                    rc, _, stderr = run_kubectl(["delete", "pod", pod_name, "-n", namespace])
+                    if rc == 0:
+                        print(f"[hydra] Pod killed.")
+                    else:
+                        print(f"[hydra] Failed to kill pod: {stderr}")
+                elif choice == "r":
+                    print(f"[hydra] Re-attaching...")
+                    subprocess.run(NewApp._exec_command)
+                else:
+                    print(f"[hydra] Pod left running. Re-attach with:")
+                    ctx_flag = f" --context {KUBE_CONTEXT}" if KUBE_CONTEXT else ""
+                    print(f"  kubectl{ctx_flag} exec -n {namespace} -it {pod_name} -- /bin/bash")
+            except (EOFError, KeyboardInterrupt):
+                # Ungraceful exit - default to kill
+                print(f"\n[hydra] Interrupted. Killing pod {pod_name}...")
+                run_kubectl(["delete", "pod", pod_name, "-n", namespace])
+                print(f"[hydra] Pod killed.")
+
+    return 0
+
+
+def main() -> int:
+    """Main entry point. Returns exit code."""
     parser = argparse.ArgumentParser(
         description="Interactive TUI for creating Kubernetes resources",
         epilog="Environment: KUBE_CONTEXT - Override kubectl context (default: current context)"
@@ -1681,84 +1778,20 @@ def main():
     if args.context:
         set_context(args.context)
 
-    try:
-        app = NewApp(namespace=args.namespace)
-        app.run()
-    except Exception as e:
-        print(f"\n[hydra] Unexpected error: {e}", file=sys.stderr)
-        _report_bug_and_exit()
+    app = NewApp(namespace=args.namespace)
+    app.run()
 
-    # Check if we need to exec into a pod after exit
-    if NewApp._exec_command:
-        # Small delay to let terminal settle after Textual exits
-        time.sleep(0.1)
-        # Run kubectl exec
-        print(f"\n[hydra] Connecting to pod...\n")
-        try:
-            result = subprocess.run(NewApp._exec_command)
-        except Exception as e:
-            print(f"\n[hydra] Error exec-ing into pod: {e}", file=sys.stderr)
-            _report_bug_and_exit()
-
-        # After exec exits, prompt for pod cleanup
-        pod_name = None
-        namespace = None
-        for i, arg in enumerate(NewApp._exec_command):
-            if arg == "-n" or arg == "--namespace":
-                namespace = NewApp._exec_command[i + 1] if i + 1 < len(NewApp._exec_command) else None
-            if arg.startswith("-n") and len(arg) > 2:
-                namespace = arg[2:]
-
-        # Extract pod name from exec command: kubectl exec ... pod_name -- command
-        try:
-            # Find the pod name (after -n/-it flags, before --)
-            dash_dash_idx = NewApp._exec_command.index("--")
-            pod_name = NewApp._exec_command[dash_dash_idx - 1]
-        except (ValueError, IndexError):
-            pass
-
-        if pod_name and namespace:
-            # Check if pod still exists
-            try:
-                rc, _, _ = run_kubectl(["get", "pod", pod_name, "-n", namespace])
-            except Exception:
-                rc = 1
-            if rc == 0:
-                print(f"\n[hydra] Interactive session ended.")
-                print(f"[hydra] Pod '{pod_name}' is still running.")
-                print(f"\nOptions:")
-                print(f"  k) Kill pod (default - press Enter)")
-                print(f"  d) Detach (leave pod running)")
-                print(f"  r) Re-attach")
-                try:
-                    choice = input("\nChoice [k]: ").strip().lower()
-                    if choice in ("", "k"):
-                        print(f"[hydra] Killing pod {pod_name}...")
-                        rc, _, stderr = run_kubectl(["delete", "pod", pod_name, "-n", namespace])
-                        if rc == 0:
-                            print(f"[hydra] Pod killed.")
-                        else:
-                            print(f"[hydra] Failed to kill pod: {stderr}")
-                    elif choice == "r":
-                        print(f"[hydra] Re-attaching...")
-                        subprocess.run(NewApp._exec_command)
-                    else:
-                        print(f"[hydra] Pod left running. Re-attach with:")
-                        ctx_flag = f" --context {KUBE_CONTEXT}" if KUBE_CONTEXT else ""
-                        print(f"  kubectl{ctx_flag} exec -n {namespace} -it {pod_name} -- /bin/bash")
-                except (EOFError, KeyboardInterrupt):
-                    # Ungraceful exit - default to kill
-                    print(f"\n[hydra] Interrupted. Killing pod {pod_name}...")
-                    run_kubectl(["delete", "pod", pod_name, "-n", namespace])
-                    print(f"[hydra] Pod killed.")
+    # Check if we need to connect to a pod after TUI exits
+    return _handle_pod_session()
 
 
 if __name__ == "__main__":
     try:
-        main()
+        sys.exit(main())
     except KeyboardInterrupt:
         print("\n[hydra] Interrupted by user")
         sys.exit(0)
     except Exception as e:
         print(f"\n[hydra] Unexpected error: {e}", file=sys.stderr)
-        _report_bug_and_exit()
+        _crash_occurred = True
+        sys.exit(1)
