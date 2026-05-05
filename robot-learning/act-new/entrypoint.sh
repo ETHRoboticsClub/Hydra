@@ -28,8 +28,8 @@ TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-29}"
 NUM_WORKERS="${NUM_WORKERS:-0}"
 VIDEO_BACKEND="${VIDEO_BACKEND:-torchcodec}"
 
-# Cache uv packages and venv on persistent storage
-export VIRTUAL_ENV="/data/.venv-act"
+# Cache uv packages and venv on persistent storage - disabled for now
+export VIRTUAL_ENV="~/.venv-act"
 export PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 echo "[entrypoint] ============================================"
