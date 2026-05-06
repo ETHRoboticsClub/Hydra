@@ -34,4 +34,5 @@ exec uv run --active --no-sync lerobot-train \
   --batch_size=8 \
   --num_workers=4 \
   --save_freq=1000 \
-  --log_freq=50
+  --log_freq=50 \
+  --hub.disable=true
