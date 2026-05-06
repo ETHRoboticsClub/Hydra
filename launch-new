@@ -352,6 +352,57 @@ substitute_template() {
   rm -f "$tmp_init" "$tmp_out"
 }
 
+label_resource() {
+  local name="$1"
+  local ns="${NAMESPACE}"
+
+  # Detect resource type and label it
+  local labeled=0
+
+  # Try Job
+  if kc -n "$ns" get job "$name" &>/dev/null; then
+    kc -n "$ns" label job "$name" \
+      ethrobotics.ch/managed-by=launch \
+      ethrobotics.ch/job-name="$name" \
+      ethrobotics.ch/launcher-hash="$LAUNCHER_HASH" \
+      --overwrite 2>/dev/null || true
+    labeled=1
+  fi
+
+  # Try TrainJob
+  if kc -n "$ns" get trainjob "$name" &>/dev/null; then
+    kc -n "$ns" label trainjob "$name" \
+      ethrobotics.ch/managed-by=launch \
+      ethrobotics.ch/job-name="$name" \
+      ethrobotics.ch/launcher-hash="$LAUNCHER_HASH" \
+      --overwrite 2>/dev/null || true
+    labeled=1
+  fi
+
+  # Try Deployment
+  if kc -n "$ns" get deployment "$name" &>/dev/null; then
+    kc -n "$ns" label deployment "$name" \
+      ethrobotics.ch/managed-by=launch \
+      ethrobotics.ch/job-name="$name" \
+      ethrobotics.ch/launcher-hash="$LAUNCHER_HASH" \
+      --overwrite 2>/dev/null || true
+    labeled=1
+  fi
+
+  # Also label the ConfigMap if it exists (for local sources)
+  if kc -n "$ns" get configmap "${name}-files" &>/dev/null; then
+    kc -n "$ns" label configmap "${name}-files" \
+      ethrobotics.ch/managed-by=launch \
+      ethrobotics.ch/job-name="$name" \
+      ethrobotics.ch/launcher-hash="$LAUNCHER_HASH" \
+      --overwrite 2>/dev/null || true
+  fi
+
+  if [[ $labeled -eq 0 ]]; then
+    echo "[launch-new] Warning: Could not detect resource type for $name to apply labels" >&2
+  fi
+}
+
 # -----------------------------------------------------------------------------
 # ConfigMap creation for local folders
 # -----------------------------------------------------------------------------
@@ -487,6 +538,9 @@ main() {
 
   # Apply manifest
   substitute_template "$template_file" | kc apply -f -
+
+  sleep 0.5
+  label_resource "$JOB_NAME"
 
   # Cleanup temp clone if we made one
   [[ -n "$GIT_TMPDIR" ]] && rm -rf "$GIT_TMPDIR"

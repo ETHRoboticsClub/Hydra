@@ -1,0 +1,11 @@
+description: CPU-only workloads
+cpu_request: 1
+cpu_limit: 4
+memory_request: 4Gi
+memory_limit: 16Gi
+gpu_request: 0
+gpu_limit: 0
+nodepool: default
+nodetier: none
+shared_memory_size: 256Mi
+multi_gpu_env: 0

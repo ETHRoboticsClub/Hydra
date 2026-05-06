@@ -1041,7 +1041,11 @@ class ConfirmDeploymentScreen(Screen):
 
         # Get profile values (for nodepool)
         profile_path = PROFILES_DIR / f"{self.profile}.yaml"
-        nodepool = yaml_value(profile_path, "nodepool") or "default"
+        # When nodetier is "none", use "default" nodepool for CPU-only workloads
+        if self.nodetier == "none":
+            nodepool = "default"
+        else:
+            nodepool = yaml_value(profile_path, "nodepool") or "default"
         shm_size = yaml_value(profile_path, "shared_memory_size") or "256Mi"
 
         # Use nodetier resources (selected by user)
@@ -1086,8 +1090,6 @@ class ConfirmDeploymentScreen(Screen):
             "REPLICAS": "1",
             "CONFIGMAP_NAME": f"{job_name}-files",
             "INIT_SCRIPT": init_escaped,
-            "NODEPOOL": profile_values["NODEPOOL"],
-            "NODETIER": profile_values["NODETIER"],
         }
 
         for key, value in replacements.items():
