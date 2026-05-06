@@ -31,8 +31,8 @@ exec uv run --active --no-sync lerobot-train \
   --dataset.root=/data \
   --output_dir="${OUTPUT_DIR}" \
   --policy.type=act \
+  --policy.push_to_hub=false \
   --batch_size=8 \
   --num_workers=4 \
   --save_freq=1000 \
-  --log_freq=50 \
-  --hub.disable=true
+  --log_freq=50
