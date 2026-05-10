@@ -4,7 +4,7 @@ vcpus: 4
 memory: 16Gi
 # Actual allocatable after k8s system reservations
 cpu_allocatable: 3
-memory_allocatable: 13Gi
+memory_allocatable: 11Gi
 gpu_model: L4
 gpu_memory: 24GB
 nodepool: gpus
