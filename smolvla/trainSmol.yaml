@@ -29,8 +29,8 @@ spec:
       spec:
         serviceAccountName: training-sa
         nodeSelector:
-          karpenter.sh/nodepool: gpum
-          node-tier: gpum
+          karpenter.sh/nodepool: g6e8xlarge
+          node-tier: g6e8xlarge
         tolerations:
           - key: nvidia.com/gpu
             operator: Exists
