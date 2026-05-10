@@ -13,11 +13,7 @@ echo "[run.sh] ===== SmolVLA fine-tune smoke test ====="
 # ── 0. Fix EBS volume permissions ────────────────────────────────────────────
 sudo chown -R "$(id -u):$(id -g)" /data /checkpoints
 
-# ── 1. Install huggingface_hub (needed for download + upload) ────────────────
-echo "[run.sh] Installing huggingface_hub[cli]..."
-pip install 'huggingface_hub[cli]' --break-system-packages
-
-# ── 2. Read HF token ─────────────────────────────────────────────────────────
+# ── 1. Read HF token ─────────────────────────────────────────────────────────
 if [ -f /secrets/hf/HF_TOKEN ]; then
   export HF_TOKEN="$(cat /secrets/hf/HF_TOKEN)"
   echo "[run.sh] HF_TOKEN loaded from /secrets/hf/HF_TOKEN."
@@ -26,13 +22,20 @@ else
 fi
 export HF_HUB_DOWNLOAD_TIMEOUT=60
 
-# ── 3. Checkpoint guard ──────────────────────────────────────────────────────
+# ── 2. Checkpoint guard ──────────────────────────────────────────────────────
 if [ -d "${CHECKPOINT_DIR}" ] && [ -n "$(ls -A "${CHECKPOINT_DIR}" 2>/dev/null)" ]; then
   echo "[run.sh] Checkpoints found at ${CHECKPOINT_DIR} — training already complete. Exiting."
   exit 0
 fi
 
-# ── 4. Dataset check / download ──────────────────────────────────────────────
+# ── 3. Install lerobot[smolvla] FIRST so it constrains huggingface_hub ───────
+# (Installing huggingface_hub[cli] separately pulls in 1.x, which breaks
+#  lerobot's RevisionNotFoundError raise — keep lerobot's pinned version.)
+echo "[run.sh] Installing lerobot[smolvla]..."
+pip install 'lerobot[smolvla]' --break-system-packages
+export PATH="$HOME/.local/bin:$PATH"
+
+# ── 4. Dataset check / download (uses lerobot-bundled huggingface_hub) ───────
 if [ -d "${DATASET_LOCAL_PATH}" ] && [ -n "$(ls -A "${DATASET_LOCAL_PATH}" 2>/dev/null)" ]; then
   echo "[run.sh] Dataset found at ${DATASET_LOCAL_PATH}. Skipping download."
 else
@@ -64,11 +67,6 @@ snapshot_download(
   done
 fi
 
-# ── 5. Install lerobot with SmolVLA extras ───────────────────────────────────
-echo "[run.sh] Installing lerobot[smolvla]..."
-pip install 'lerobot[smolvla]' --break-system-packages
-export PATH="$HOME/.local/bin:$PATH"
-
 # ── 6. Verify CUDA + lerobot ─────────────────────────────────────────────────
 echo "[run.sh] Verifying CUDA and lerobot..."
 python -c "
@@ -92,6 +90,7 @@ lerobot-train \
   --policy.repo_id="${HF_MODEL_REPO}" \
   --dataset.repo_id="${HF_REPO_ID}" \
   --dataset.root="${DATASET_LOCAL_PATH}" \
+  --dataset.revision=main \
   --output_dir="${CHECKPOINT_DIR}" \
   --job_name=smolvla_training \
   --batch_size=64 \
