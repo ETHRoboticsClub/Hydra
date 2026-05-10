@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: smolvla-wipe-hf
+  namespace: humanoid
+spec:
+  serviceAccountName: training-sa
+  nodeSelector:
+    karpenter.sh/nodepool: g6e8xlarge
+    node-tier: g6e8xlarge
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+  restartPolicy: Never
+  volumes:
+    - name: hf-token
+      secret:
+        secretName: hf-token
+  containers:
+    - name: wipe
+      image: 916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-d866de5
+      command:
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          export HF_TOKEN=$(cat /secrets/hf/HF_TOKEN)
+          pip install --quiet huggingface_hub --break-system-packages 2>&1 | tail -1
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+          REPO = "LucaFrat/smolVLA"
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          files = api.list_repo_files(repo_id=REPO, repo_type="model")
+          print(f"[wipe] {len(files)} files to delete in {REPO}")
+          if not files:
+              print("[wipe] Nothing to delete."); raise SystemExit(0)
+          for f in files: print(f"  - {f}")
+          api.delete_files(repo_id=REPO, repo_type="model",
+                           delete_patterns=files,
+                           commit_message="wipe smolVLA contents before next smoke run")
+          print(f"[wipe] Deleted {len(files)} files. Repo still exists, just empty.")
+          remaining = api.list_repo_files(repo_id=REPO, repo_type="model")
+          print(f"[wipe] Remaining: {len(remaining)} files: {remaining}")
+          PY
+      resources:
+        requests: { cpu: "1", memory: "2Gi" }
+        limits:   { cpu: "1", memory: "2Gi" }
+      volumeMounts:
+        - name: hf-token
+          mountPath: /secrets/hf
+          readOnly: true

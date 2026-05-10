@@ -1,0 +1,82 @@
+# Real-run: 4× L40S on g6e.48xlarge (gpul nodepool), full 60000 steps.
+# batch_size=64 per GPU → effective batch = 256.
+# save_freq=2500 → 24 saves total, ~20 GB on PVC + HF (fits in 80 GB PVC).
+#
+# Wall-time estimate: ~14-17 hours (single-GPU baseline was 1.14 step/s at
+# batch=64; 4× DDP with same per-GPU batch holds step rate roughly constant
+# while quadrupling effective batch). If you'd rather match the single-GPU
+# effective batch (=64) and finish sooner, drop BATCH_SIZE_PER_GPU to 16 →
+# expect ~5-7 h wall but at the same effective training as a single-GPU run.
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: TrainJob
+metadata:
+  name: smolvla-finetune-multi-real
+  namespace: humanoid
+spec:
+  runtimeRef:
+    name: torch-distributed
+  trainer:
+    image: 916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-d866de5
+    command:
+      - /bin/bash
+      - -c
+      - curl https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/testLuca/smolvla/run-multi.sh -o /tmp/run.sh && bash /tmp/run.sh
+    numNodes: 1
+    resourcesPerNode:
+      requests:
+        nvidia.com/gpu: "4"
+        cpu: "40"
+        memory: "320Gi"
+      limits:
+        nvidia.com/gpu: "4"
+        cpu: "40"
+        memory: "320Gi"
+  podTemplateOverrides:
+    - targetJobs:
+        - name: node
+      spec:
+        serviceAccountName: training-sa
+        nodeSelector:
+          karpenter.sh/nodepool: gpul
+          node-tier: gpul
+        tolerations:
+          - key: nvidia.com/gpu
+            operator: Exists
+            effect: NoSchedule
+        volumes:
+          - name: data
+            persistentVolumeClaim:
+              claimName: smolvla-data
+          - name: checkpoints
+            persistentVolumeClaim:
+              claimName: smolvla-checkpoints
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 16Gi
+          - name: hf-token
+            secret:
+              secretName: hf-token
+        containers:
+          - name: node
+            env:
+              - name: NUM_GPUS
+                value: "4"
+              - name: BATCH_SIZE_PER_GPU
+                value: "64"
+              - name: STEPS
+                value: "60000"
+              - name: SAVE_FREQ
+                value: "2500"
+              - name: LOG_FREQ
+                value: "100"
+            volumeMounts:
+              - name: data
+                mountPath: /data
+              - name: checkpoints
+                mountPath: /checkpoints
+              - name: dshm
+                mountPath: /dev/shm
+              - name: hf-token
+                mountPath: /secrets/hf
+                readOnly: true
