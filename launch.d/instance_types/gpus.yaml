@@ -11,6 +11,6 @@ nodepool: gpus
 nodetier: gpus
 gpu_request: 1
 gpu_limit: 1
-shared_memory_size: 8Gi
+shared_memory_size: 1Gi
 multi_gpu_env: 0
 train_act_device_config: train/act/configs/aws_gpus.yaml
