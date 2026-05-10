@@ -15,7 +15,9 @@ spec:
     command:
       - /bin/bash
       - -c
-      - curl https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/testLuca/smolvla/run-multi.sh -o /tmp/run.sh && bash /tmp/run.sh
+      - |
+        export NUM_GPUS=4 BATCH_SIZE_PER_GPU=64 STEPS=100 SAVE_FREQ=20 LOG_FREQ=20
+        curl https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/testLuca/smolvla/run-multi.sh -o /tmp/run.sh && bash /tmp/run.sh
     numNodes: 1
     resourcesPerNode:
       requests:
@@ -54,17 +56,6 @@ spec:
               secretName: hf-token
         containers:
           - name: node
-            env:
-              - name: NUM_GPUS
-                value: "4"
-              - name: BATCH_SIZE_PER_GPU
-                value: "64"
-              - name: STEPS
-                value: "100"
-              - name: SAVE_FREQ
-                value: "20"
-              - name: LOG_FREQ
-                value: "20"
             volumeMounts:
               - name: data
                 mountPath: /data
