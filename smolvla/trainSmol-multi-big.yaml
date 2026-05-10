@@ -1,8 +1,8 @@
 # Parallel multi-GPU training to LucaFrat/smolVLAbig.
 # 4× L40S 48GB on g6e.12xlarge (gpul nodepool — same one Groot uses).
-# Dataset PVC (smolvla-data) is shared with the single-GPU run; checkpoints
-# go to the dedicated smolvla-checkpoints-big PVC so the two runs don't
-# stomp on each other.
+# Uses dedicated smolvla-data-big and smolvla-checkpoints-big PVCs so it
+# doesn't conflict with the single-GPU run's volumes (EBS RWO can't be
+# multi-attached). Big run re-downloads the dataset on first start.
 #
 # Resource sizing fits g6e.12xlarge (48 vCPU / 384 GiB / 4× L40S):
 #   request 40 CPU / 320 GiB — leaves ~8 vCPU and ~64 GiB for kubelet/system.
@@ -52,7 +52,7 @@ spec:
         volumes:
           - name: data
             persistentVolumeClaim:
-              claimName: smolvla-data
+              claimName: smolvla-data-big
           - name: checkpoints
             persistentVolumeClaim:
               claimName: smolvla-checkpoints-big

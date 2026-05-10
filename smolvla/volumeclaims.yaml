@@ -25,8 +25,7 @@ spec:
       storage: 80Gi
 ---
 # Separate checkpoint volume for the parallel multi-GPU "big" training
-# (LucaFrat/smolVLAbig). Dataset volume (smolvla-data) is intentionally
-# shared between both runs.
+# (LucaFrat/smolVLAbig).
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -39,3 +38,20 @@ spec:
   resources:
     requests:
       storage: 80Gi
+---
+# Separate dataset volume for the big run. We'd ideally share smolvla-data
+# but EBS gp3 RWO PVCs can only be attached to one node at a time, and the
+# two runs target different nodepools (gpum vs gpul). Big run re-downloads
+# the dataset to its own PVC.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: smolvla-data-big
+  namespace: humanoid
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+  resources:
+    requests:
+      storage: 20Gi
