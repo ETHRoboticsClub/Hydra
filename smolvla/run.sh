@@ -139,7 +139,7 @@ print('lerobot imported OK')
 "
 which lerobot-train
 
-# ── 7. Train (smoke test: 200 steps) ─────────────────────────────────────────
+# ── 7. Train (smoke test: 100 steps, save every 20) ──────────────────────────
 echo "[run.sh] Starting SmolVLA fine-tuning..."
 
 lerobot-train \
@@ -151,8 +151,8 @@ lerobot-train \
   --output_dir="${CHECKPOINT_DIR}" \
   --job_name=smolvla_training \
   --batch_size=64 \
-  --steps=200 \
-  --save_freq=100 \
+  --steps=100 \
+  --save_freq=20 \
   --log_freq=20 \
   --policy.device=cuda \
   --policy.push_to_hub=false \
