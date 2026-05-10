@@ -38,3 +38,15 @@ tmp/
 temp/
 *.tmp
 *.bak
+
+# Local tooling / binaries (don't commit)
+aws/
+awscliv2.zip
+kubectl
+kubectl.sha256
+
+# Local-machine training scripts (use the in-repo run.sh instead)
+trainSmolVLA.sh
+
+# Local checkpoint downloads (e.g. via `kubectl cp` from training pods)
+g1_finetune/
