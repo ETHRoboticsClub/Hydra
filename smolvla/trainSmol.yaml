@@ -1,0 +1,63 @@
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: TrainJob
+metadata:
+  name: smolvla-finetune
+  namespace: humanoid
+spec:
+  runtimeRef:
+    name: torch-distributed
+  trainer:
+    # NOTE: run.sh lives at smolvla/run.sh on the testLuca branch.
+    image: 916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-d866de5
+    command:
+      - /bin/bash
+      - -c
+      - curl https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/testLuca/smolvla/run.sh -o /tmp/run.sh && bash /tmp/run.sh
+    numNodes: 1
+    resourcesPerNode:
+      requests:
+        nvidia.com/gpu: "1"
+        cpu: "10"
+        memory: "80Gi"
+      limits:
+        nvidia.com/gpu: "1"
+        cpu: "10"
+        memory: "80Gi"
+  podTemplateOverrides:
+    - targetJobs:
+        - name: node
+      spec:
+        serviceAccountName: training-sa
+        nodeSelector:
+          karpenter.sh/nodepool: gpum
+          node-tier: gpum
+        tolerations:
+          - key: nvidia.com/gpu
+            operator: Exists
+            effect: NoSchedule
+        volumes:
+          - name: data
+            persistentVolumeClaim:
+              claimName: smolvla-data
+          - name: checkpoints
+            persistentVolumeClaim:
+              claimName: smolvla-checkpoints
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 8Gi
+          - name: hf-token
+            secret:
+              secretName: hf-token
+        containers:
+          - name: node
+            volumeMounts:
+              - name: data
+                mountPath: /data
+              - name: checkpoints
+                mountPath: /checkpoints
+              - name: dshm
+                mountPath: /dev/shm
+              - name: hf-token
+                mountPath: /secrets/hf
+                readOnly: true
