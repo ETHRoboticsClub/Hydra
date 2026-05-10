@@ -45,7 +45,7 @@ spec:
           - name: dshm
             emptyDir:
               medium: Memory
-              sizeLimit: 4Gi
+              sizeLimit: 16Gi
           - name: hf-token
             secret:
               secretName: hf-token
