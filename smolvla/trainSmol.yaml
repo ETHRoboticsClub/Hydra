@@ -17,20 +17,20 @@ spec:
     resourcesPerNode:
       requests:
         nvidia.com/gpu: "1"
-        cpu: "10"
-        memory: "80Gi"
+        cpu: "6"
+        memory: "32Gi"
       limits:
         nvidia.com/gpu: "1"
-        cpu: "10"
-        memory: "80Gi"
+        cpu: "6"
+        memory: "32Gi"
   podTemplateOverrides:
     - targetJobs:
         - name: node
       spec:
         serviceAccountName: training-sa
         nodeSelector:
-          karpenter.sh/nodepool: g6e8xlarge
-          node-tier: g6e8xlarge
+          karpenter.sh/nodepool: gpum
+          node-tier: gpum
         tolerations:
           - key: nvidia.com/gpu
             operator: Exists
@@ -45,7 +45,7 @@ spec:
           - name: dshm
             emptyDir:
               medium: Memory
-              sizeLimit: 8Gi
+              sizeLimit: 4Gi
           - name: hf-token
             secret:
               secretName: hf-token

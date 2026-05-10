@@ -1,6 +1,8 @@
-# Multi-GPU smoke test: 4× L40S on g6e.48xlarge (gpul nodepool).
-# Same params as the single-GPU smoke (steps=100, save_freq=20) but with
-# batch_size=64 per GPU → effective batch = 256 (4× the single-GPU smoke).
+# Multi-GPU smoke test on h100 nodepool (p5.48xlarge, 8× H100 80GB).
+# All other multi-GPU pools (gpul/a100-40/a100-80/g548xlarge) had no
+# AWS on-demand capacity in us-east-1b at smoke time. h100 = last try.
+# We request 4 of 8 H100s; H100 80GB has tons of headroom for SmolVLA
+# at batch_size=64.
 # For the real-run version (steps=60000), see trainSmol-multi-real.yaml.
 apiVersion: trainer.kubeflow.org/v1alpha1
 kind: TrainJob
@@ -34,8 +36,8 @@ spec:
       spec:
         serviceAccountName: training-sa
         nodeSelector:
-          karpenter.sh/nodepool: gpul
-          node-tier: gpul
+          karpenter.sh/nodepool: h100
+          node-tier: h100
         tolerations:
           - key: nvidia.com/gpu
             operator: Exists
