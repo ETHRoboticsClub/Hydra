@@ -1,0 +1,77 @@
+# Parallel multi-GPU training to LucaFrat/smolVLAbig.
+# 4× L40S 48GB on g6e.12xlarge (gpul nodepool — same one Groot uses).
+# Dataset PVC (smolvla-data) is shared with the single-GPU run; checkpoints
+# go to the dedicated smolvla-checkpoints-big PVC so the two runs don't
+# stomp on each other.
+#
+# Resource sizing fits g6e.12xlarge (48 vCPU / 384 GiB / 4× L40S):
+#   request 40 CPU / 320 GiB — leaves ~8 vCPU and ~64 GiB for kubelet/system.
+# Same as the existing Groot finetune job, which works on this nodepool.
+#
+# Defaults: 80k steps @ batch=64/GPU (effective 256), save every 10k →
+# 8 checkpoints. Adjust the inline export to change.
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: TrainJob
+metadata:
+  name: smolvla-finetune-big-multi
+  namespace: humanoid
+spec:
+  runtimeRef:
+    name: torch-distributed
+  trainer:
+    image: 916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-d866de5
+    command:
+      - /bin/bash
+      - -c
+      - |
+        export NUM_GPUS=4 BATCH_SIZE_PER_GPU=64 STEPS=80000 SAVE_FREQ=10000 LOG_FREQ=200
+        export HF_MODEL_REPO=LucaFrat/smolVLAbig
+        curl https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/testLuca/smolvla/run-multi.sh -o /tmp/run.sh && bash /tmp/run.sh
+    numNodes: 1
+    resourcesPerNode:
+      requests:
+        nvidia.com/gpu: "4"
+        cpu: "40"
+        memory: "320Gi"
+      limits:
+        nvidia.com/gpu: "4"
+        cpu: "40"
+        memory: "320Gi"
+  podTemplateOverrides:
+    - targetJobs:
+        - name: node
+      spec:
+        serviceAccountName: training-sa
+        nodeSelector:
+          karpenter.sh/nodepool: gpul
+          node-tier: gpul
+        tolerations:
+          - key: nvidia.com/gpu
+            operator: Exists
+            effect: NoSchedule
+        volumes:
+          - name: data
+            persistentVolumeClaim:
+              claimName: smolvla-data
+          - name: checkpoints
+            persistentVolumeClaim:
+              claimName: smolvla-checkpoints-big
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 16Gi
+          - name: hf-token
+            secret:
+              secretName: hf-token
+        containers:
+          - name: node
+            volumeMounts:
+              - name: data
+                mountPath: /data
+              - name: checkpoints
+                mountPath: /checkpoints
+              - name: dshm
+                mountPath: /dev/shm
+              - name: hf-token
+                mountPath: /secrets/hf
+                readOnly: true

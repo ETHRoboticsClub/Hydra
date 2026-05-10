@@ -4,7 +4,10 @@ set -euo pipefail
 DATASET_LOCAL_PATH="/data/Insertion"
 CHECKPOINT_DIR="/checkpoints/smolvla_training"
 HF_REPO_ID="LucaFrat/Insertion"
-HF_MODEL_REPO="LucaFrat/smolVLA"
+# HF_MODEL_REPO defaults to LucaFrat/smolVLA but can be overridden
+# by the TrainJob's inline export (e.g. LucaFrat/smolVLAbig for the
+# parallel multi-GPU "big" training).
+HF_MODEL_REPO="${HF_MODEL_REPO:-LucaFrat/smolVLA}"
 
 # Tunables — passed in from the TrainJob env, defaults are smoke-test values.
 # Note: lerobot's --batch_size is per-process (per-GPU) under accelerate, so

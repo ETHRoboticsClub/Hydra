@@ -23,3 +23,19 @@ spec:
   resources:
     requests:
       storage: 80Gi
+---
+# Separate checkpoint volume for the parallel multi-GPU "big" training
+# (LucaFrat/smolVLAbig). Dataset volume (smolvla-data) is intentionally
+# shared between both runs.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: smolvla-checkpoints-big
+  namespace: humanoid
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+  resources:
+    requests:
+      storage: 80Gi
