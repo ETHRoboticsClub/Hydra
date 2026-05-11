@@ -1,0 +1,81 @@
+# Single-GPU SmolVLA training on the LucaFrat/threeTasks dataset.
+# 1× L40S 48GB on gpum (g6e.xlarge / g6e.2xlarge) — same hardware shape as
+# the Insertion 80k run.
+#
+# Drives the same parameterized smolvla/run.sh via inline env exports:
+#   HF_REPO_ID=LucaFrat/threeTasks            # source dataset
+#   HF_MODEL_REPO=LucaFrat/smolVLAthreeTasks  # destination model repo
+#   DATASET_LOCAL_PATH=/data/threeTasks       # cache path on PVC
+#   CHECKPOINT_DIR=/checkpoints/smolvla_threetasks
+#   BATCH_SIZE=64 STEPS=80000 SAVE_FREQ=10000 → 8 checkpoints
+#
+# Uses dedicated smolvla-{data,checkpoints}-threetasks PVCs (no conflict
+# with Insertion's smolvla-{data,checkpoints} or big's *-big PVCs).
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: TrainJob
+metadata:
+  name: smolvla-finetune-threetasks
+  namespace: humanoid
+spec:
+  runtimeRef:
+    name: torch-distributed
+  trainer:
+    image: 916780037007.dkr.ecr.us-east-1.amazonaws.com/ethroboticsclub/pytorch:sha-d866de5
+    command:
+      - /bin/bash
+      - -c
+      - |
+        export HF_REPO_ID=LucaFrat/threeTasks
+        export HF_MODEL_REPO=LucaFrat/smolVLAthreeTasks
+        export DATASET_LOCAL_PATH=/data/threeTasks
+        export CHECKPOINT_DIR=/checkpoints/smolvla_threetasks
+        export BATCH_SIZE=64 STEPS=80000 SAVE_FREQ=10000 LOG_FREQ=200
+        curl https://raw.githubusercontent.com/ETHRoboticsClub/Hydra/refs/heads/testLuca/smolvla/run.sh -o /tmp/run.sh && bash /tmp/run.sh
+    numNodes: 1
+    resourcesPerNode:
+      requests:
+        nvidia.com/gpu: "1"
+        cpu: "6"
+        memory: "32Gi"
+      limits:
+        nvidia.com/gpu: "1"
+        cpu: "6"
+        memory: "32Gi"
+  podTemplateOverrides:
+    - targetJobs:
+        - name: node
+      spec:
+        serviceAccountName: training-sa
+        nodeSelector:
+          karpenter.sh/nodepool: gpum
+          node-tier: gpum
+        tolerations:
+          - key: nvidia.com/gpu
+            operator: Exists
+            effect: NoSchedule
+        volumes:
+          - name: data
+            persistentVolumeClaim:
+              claimName: smolvla-data-threetasks
+          - name: checkpoints
+            persistentVolumeClaim:
+              claimName: smolvla-checkpoints-threetasks
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 4Gi
+          - name: hf-token
+            secret:
+              secretName: hf-token
+        containers:
+          - name: node
+            volumeMounts:
+              - name: data
+                mountPath: /data
+              - name: checkpoints
+                mountPath: /checkpoints
+              - name: dshm
+                mountPath: /dev/shm
+              - name: hf-token
+                mountPath: /secrets/hf
+                readOnly: true

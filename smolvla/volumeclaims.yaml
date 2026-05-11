@@ -55,3 +55,32 @@ spec:
   resources:
     requests:
       storage: 20Gi
+---
+# Volumes for the threeTasks training (LucaFrat/threeTasks dataset →
+# LucaFrat/smolVLAthreeTasks model). Single-GPU on gpum, separate from
+# both the Insertion and big runs so the three trainings don't collide.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: smolvla-data-threetasks
+  namespace: humanoid
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: smolvla-checkpoints-threetasks
+  namespace: humanoid
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+  resources:
+    requests:
+      storage: 80Gi

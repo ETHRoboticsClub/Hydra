@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DATASET_LOCAL_PATH="/data/Insertion"
-CHECKPOINT_DIR="/checkpoints/smolvla_training"
-HF_REPO_ID="LucaFrat/Insertion"
-HF_MODEL_REPO="LucaFrat/smolVLA"
+# Defaults match the original Insertion → smolVLA run; override via env in the
+# TrainJob command (inline `export` before the curl) to retarget for another
+# dataset/model.
+DATASET_LOCAL_PATH="${DATASET_LOCAL_PATH:-/data/Insertion}"
+CHECKPOINT_DIR="${CHECKPOINT_DIR:-/checkpoints/smolvla_training}"
+HF_REPO_ID="${HF_REPO_ID:-LucaFrat/Insertion}"
+HF_MODEL_REPO="${HF_MODEL_REPO:-LucaFrat/smolVLA}"
+BATCH_SIZE="${BATCH_SIZE:-64}"
+STEPS="${STEPS:-80000}"
+SAVE_FREQ="${SAVE_FREQ:-10000}"
+LOG_FREQ="${LOG_FREQ:-200}"
 
 export PATH="$HOME/.local/bin:$PATH"
 
@@ -139,8 +146,8 @@ print('lerobot imported OK')
 "
 which lerobot-train
 
-# ── 7. Train (real run: 80k steps @ batch=64, save every 10k → 8 ckpts) ──────
-echo "[run.sh] Starting SmolVLA fine-tuning..."
+# ── 7. Train (env-driven: BATCH_SIZE/STEPS/SAVE_FREQ/LOG_FREQ override) ──────
+echo "[run.sh] Starting SmolVLA fine-tuning (BATCH=$BATCH_SIZE STEPS=$STEPS SAVE_FREQ=$SAVE_FREQ)..."
 
 lerobot-train \
   --policy.path=lerobot/smolvla_base \
@@ -150,10 +157,10 @@ lerobot-train \
   --dataset.revision=main \
   --output_dir="${CHECKPOINT_DIR}" \
   --job_name=smolvla_training \
-  --batch_size=64 \
-  --steps=80000 \
-  --save_freq=10000 \
-  --log_freq=200 \
+  --batch_size="${BATCH_SIZE}" \
+  --steps="${STEPS}" \
+  --save_freq="${SAVE_FREQ}" \
+  --log_freq="${LOG_FREQ}" \
   --policy.device=cuda \
   --policy.push_to_hub=false \
   --wandb.enable=false
