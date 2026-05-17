@@ -1,0 +1,158 @@
+# Cosmos-Predict2 YAMS (yet-another-manipulation-setup) video2world fine-tune
+# Reference: https://github.com/ETHRoboticsClub/cosmos-predict2/blob/main/scripts/mimic.md
+#
+# Variables in {{BRACKETS}} are substituted by launch-new.
+#
+# Launch (smoke test, ~5 iters, cheap):
+#   SMOKETEST=1 \
+#   IMAGE_OVERRIDE=nvcr.io/nvidia/pytorch:24.12-py3 \
+#   DATA_PVC=cosmos-yams \
+#   SHM_SIZE=64Gi \
+#   ./launch-new a100 cosmos2-yams
+#
+# Launch (full 7000-iter run on a100-40, single node 8 GPUs):
+#   IMAGE_OVERRIDE=nvcr.io/nvidia/pytorch:24.12-py3 \
+#   DATA_PVC=cosmos-yams \
+#   SHM_SIZE=64Gi \
+#   ./launch-new a100 cosmos2-yams
+#
+# Env vars (pass via env before launch-new, picked up by entrypoint.sh):
+#   SMOKETEST=1   — short run (5 iters) for plumbing validation
+#   NPROC         — number of GPUs for torchrun (default: auto-detect, 8 on p4d.24xlarge)
+#   WANDB_API_KEY — injected from wandb-secret automatically
+#   HF_TOKEN      — injected from hf-secret automatically (needed for HF dataset access)
+#
+# Notes:
+# - main container runs as root (UID 0) — required to write to the s3-data PVC.
+# - DATA_PVC holds: cloned repo, uv venv, raw HF dataset (~340MB), converted MP4s,
+#   T5 embeddings, and local training outputs. Final checkpoints get copied to /s3 at end.
+# - JOB_NAME is exposed via downward API so the entrypoint can name its S3 output dir.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{JOB_NAME}}
+  namespace: {{NAMESPACE}}
+  labels:
+    app: {{JOB_NAME}}
+    ethrobotics.ch/managed-by: launch
+    ethrobotics.ch/job-name: {{JOB_NAME}}
+    ethrobotics.ch/profile: {{PROFILE}}
+    ethrobotics.ch/launcher-hash: {{LAUNCHER_HASH}}
+  annotations:
+    ethrobotics.ch/launcher: '{{LAUNCHER_ID}}'
+    ethrobotics.ch/user: '{{USER}}'
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: {{JOB_NAME}}
+        ethrobotics.ch/job-name: {{JOB_NAME}}
+      annotations:
+        ethrobotics.ch/launcher: '{{LAUNCHER_ID}}'
+        ethrobotics.ch/user: '{{USER}}'
+    spec:
+      serviceAccountName: {{SERVICE_ACCOUNT}}
+      nodeSelector:
+        karpenter.sh/nodepool: {{NODEPOOL}}
+        node-tier: {{NODETIER}}
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        fsGroup: 0
+      initContainers:
+        - name: init
+          image: {{INIT_IMAGE}}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+{{INIT_SCRIPT}}
+          resources:
+            requests:
+              cpu: "{{CPU_REQUEST}}"
+              memory: "{{MEM_REQUEST}}"
+              nvidia.com/gpu: "{{GPU_REQUEST}}"
+            limits:
+              cpu: "{{CPU_BUFFER_LIMIT}}"
+              memory: "{{MEM_BUFFER_LIMIT}}"
+              nvidia.com/gpu: "{{GPU_LIMIT}}"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: data
+              mountPath: /data
+            - name: job-files
+              mountPath: /job-files
+              readOnly: true
+      containers:
+        - name: main
+          image: {{IMAGE}}
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euxo pipefail
+              export WANDB_API_KEY="$(cat /var/run/secrets/wandb/WANDB_API_KEY 2>/dev/null || echo '')"
+              export HF_TOKEN="$(cat /var/run/secrets/hf/HF_TOKEN 2>/dev/null || echo '')"
+              cd /workspace && ./entrypoint.sh
+          env:
+            - name: JOB_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['ethrobotics.ch/job-name']
+            - name: PYTORCH_CUDA_ALLOC_CONF
+              value: "expandable_segments:True"
+            - name: IMAGINAIRE_OUTPUT_ROOT
+              value: "outputs"
+          resources:
+            requests:
+              cpu: "{{CPU_REQUEST}}"
+              memory: "{{MEM_REQUEST}}"
+              nvidia.com/gpu: "{{GPU_REQUEST}}"
+            limits:
+              cpu: "{{CPU_BUFFER_LIMIT}}"
+              memory: "{{MEM_BUFFER_LIMIT}}"
+              nvidia.com/gpu: "{{GPU_LIMIT}}"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: data
+              mountPath: /data
+            - name: s3
+              mountPath: /s3
+            - name: dshm
+              mountPath: /dev/shm
+            - name: wandb-secret
+              mountPath: /var/run/secrets/wandb
+              readOnly: true
+            - name: hf-secret
+              mountPath: /var/run/secrets/hf
+              readOnly: true
+      volumes:
+        - name: workspace
+          emptyDir: {}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{DATA_PVC}}
+        - name: s3
+          persistentVolumeClaim:
+            claimName: {{S3_PVC}}
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{SHM_SIZE}}
+        - name: wandb-secret
+          secret:
+            secretName: wandb-secret
+        - name: hf-secret
+          secret:
+            secretName: hf-secret
+        - name: job-files
+          configMap:
+            name: {{CONFIGMAP_NAME}}
+            defaultMode: 0755
