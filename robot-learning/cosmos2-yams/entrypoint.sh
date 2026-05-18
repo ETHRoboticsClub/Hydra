@@ -13,7 +13,7 @@ set -euo pipefail
 
 # ---------- config ----------
 REPO_DIR="/data/cosmos-predict2"
-HF_DATASET="${HF_DATASET:-ETHRC/yams-closed-carton-box-to-migros-basket-go2}"
+HF_DATASET="${HF_DATASET:-ETHRC/robot-learning-fa26}"
 DATASET_LOCAL_DIR="datasets/yams_lerobot"
 DATASET_PREPARED_DIR="datasets/yams_cosmos_mp4"
 EXPERIMENT="${EXPERIMENT:-predict2_video2world_training_2b_yams}"

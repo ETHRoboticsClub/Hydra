@@ -1,0 +1,25 @@
+# Persistent volume claim for the cosmos2-yams template.
+# Holds the cloned repo, uv venv (with flash-attn), the gated model checkpoint,
+# raw + prepared HF dataset, T5 embeddings, and local training outputs.
+#
+# Apply once before the first launch:
+#   kubectl apply -f robot-learning/cosmos2-yams/pvc.yaml
+#
+# Uses the cluster's default storage class (gp3 on EKS), same as act-data /
+# act-checkpoints in launch.d/volumeclaims.yaml. RWO — single-pod template.
+# Size budgeted for: 2B v2w model (~15Gi) + cu126 venv with flash-attn (~10Gi)
+# + raw dataset + prepared MP4s + T5 embeds (~10Gi) + LoRA checkpoints (~5Gi)
+# + buffer. Final artifacts are copied off to the s3-data PVC so this can be
+# deleted between unrelated experiments.
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cosmos-yams
+  namespace: robot-learning
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 200Gi
