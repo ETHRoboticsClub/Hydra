@@ -66,10 +66,15 @@ source .venv/bin/activate
 # ---------- 4. patch prepare script: tolerate bad episodes ----------
 # Nico: "the affected episodes will be logged when you try to convert them, just
 # rm those in the entrypoint." Upstream only catches CalledProcessError; broaden
-# to Exception so any per-episode failure (short clip / corrupt mp4 / ValueError)
-# is skipped+logged rather than crashing the whole conversion. Idempotent: the
-# replacement target is gone after the first run.
+# to Exception so any per-episode failure (short clip / corrupt mp4 / ValueError
+# on 0-frame ffmpeg output) is skipped+logged rather than crashing the whole
+# conversion. Also rewrite the handler body — it accesses `e.stderr.decode()`
+# which exists on CalledProcessError but blows up with AttributeError on
+# ValueError. Use str(e) for the non-subprocess branch. Both sed expressions
+# are idempotent: after the first run their targets are gone.
 sed -i 's/except subprocess.CalledProcessError as e:/except Exception as e:/' \
+  scripts/prepare_lerobot_cosmos_dataset.py || true
+sed -i 's|e\.stderr\.decode()\[-300:\]|(e.stderr.decode() if hasattr(e, "stderr") and e.stderr else str(e))[-300:]|g' \
   scripts/prepare_lerobot_cosmos_dataset.py || true
 
 # ---------- 5. HF auth ----------
@@ -110,8 +115,13 @@ if [ ! -d "${DATASET_LOCAL_DIR}/meta" ]; then
 fi
 
 # ---------- 8. convert LeRobot → VideoDataset (MP4 + captions) ----------
-if [ ! -d "${DATASET_PREPARED_DIR}/train" ]; then
+# Sentinel is a "done" marker that's only created after a successful run.
+# If a previous attempt crashed mid-way the dir exists but the marker doesn't,
+# so we wipe + rerun. ffmpeg is invoked with -y so re-encoding is idempotent.
+PREPARE_DONE="${DATASET_PREPARED_DIR}/.prepare_done"
+if [ ! -f "${PREPARE_DONE}" ]; then
   echo "[cosmos2-yams] preparing dataset → ${DATASET_PREPARED_DIR} (camera=${CAMERA})..."
+  rm -rf "${DATASET_PREPARED_DIR}"
   uv run --with pyarrow --with pandas --with tqdm \
     python scripts/prepare_lerobot_cosmos_dataset.py \
       --src "${DATASET_LOCAL_DIR}" \
@@ -119,6 +129,7 @@ if [ ! -d "${DATASET_PREPARED_DIR}/train" ]; then
       --camera "${CAMERA}" \
       --fps 10 \
       --video-size 480 640
+  touch "${PREPARE_DONE}"
 fi
 
 # ---------- 9. T5 embeddings (train + val) ----------
