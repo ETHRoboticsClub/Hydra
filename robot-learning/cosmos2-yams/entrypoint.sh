@@ -80,16 +80,24 @@ if [ -n "${HF_TOKEN:-}" ]; then
 fi
 
 # ---------- 6. download model checkpoint (gated: nvidia/Cosmos-Predict2-2B-Video2World) ----------
-# Sentinel avoids re-running the multi-GB download on pod restart.
-MODEL_SENTINEL="checkpoints/.cosmos_predict2_v2w_2b_480p_10fps.done"
-if [ ! -f "${MODEL_SENTINEL}" ]; then
+# Skip-condition is the presence of the v2w model file itself, not a touched
+# sentinel — download_checkpoints.py exits 0 even on per-model 403s (it logs
+# and moves on), so a touched-sentinel would mask a still-missing model.
+V2W_MODEL_FILE="checkpoints/nvidia/Cosmos-Predict2-2B-Video2World/model-480p-10fps.pt"
+if [ ! -f "${V2W_MODEL_FILE}" ]; then
   echo "[cosmos2-yams] downloading model checkpoints..."
   uv run python scripts/download_checkpoints.py \
     --model_types video2world \
     --model_sizes 2B \
     --resolution 480 \
     --fps 10
-  mkdir -p checkpoints && touch "${MODEL_SENTINEL}"
+fi
+if [ ! -f "${V2W_MODEL_FILE}" ]; then
+  echo "[cosmos2-yams] ERROR: ${V2W_MODEL_FILE} still missing after download." >&2
+  echo "[cosmos2-yams]   Likely the HF token in hf-secret has no access to" >&2
+  echo "[cosmos2-yams]   nvidia/Cosmos-Predict2-2B-Video2World (gated repo)." >&2
+  echo "[cosmos2-yams]   Accept terms at https://huggingface.co/nvidia/Cosmos-Predict2-2B-Video2World" >&2
+  exit 1
 fi
 
 # ---------- 7. download dataset ----------
