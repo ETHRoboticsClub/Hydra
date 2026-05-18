@@ -21,7 +21,7 @@
 #   NPROC         — number of GPUs for torchrun (default: auto-detect, 8 on p4d.24xlarge)
 #   WANDB_API_KEY — injected from wandb-secret automatically
 #   HF_TOKEN      — injected from hf-secret automatically (needed for HF dataset access)
-#   HF_DATASET    — overrides the dataset (default: ETHRC/robot-learning-fa26)
+#   HF_DATASET    — overrides the dataset (default: ETHRC/robot-learning-fs26)
 #
 # Notes:
 # - main container runs as root (UID 0) — required to write to the s3-data PVC.
