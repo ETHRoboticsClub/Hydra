@@ -22,6 +22,7 @@
 #   WANDB_API_KEY — injected from wandb-secret automatically
 #   HF_TOKEN      — injected from hf-secret automatically (needed for HF dataset access)
 #   HF_DATASET    — overrides the dataset (default: ETHRC/robot-learning-fs26)
+#   STRICT_MODEL_DOWNLOAD=0 — continue past a missing v2w model (default 1 = fail fast)
 #
 # Notes:
 # - main container runs as root (UID 0) — required to write to the s3-data PVC.

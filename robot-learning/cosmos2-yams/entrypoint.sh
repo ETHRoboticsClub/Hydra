@@ -85,9 +85,16 @@ if [ -n "${HF_TOKEN:-}" ]; then
 fi
 
 # ---------- 6. download model checkpoint (gated: nvidia/Cosmos-Predict2-2B-Video2World) ----------
-# Skip-condition is the presence of the v2w model file itself, not a touched
-# sentinel — download_checkpoints.py exits 0 even on per-model 403s (it logs
-# and moves on), so a touched-sentinel would mask a still-missing model.
+# download_checkpoints.py grabs the full cosmos suite (v2w + cosmos-reason1 + t5
+# + cosmos-guardrail1 + meta-llama/llama-guard-3-8b). For fine-tuning only v2w
+# is *required* — the guard models are runtime safety filters we don't use.
+# The script logs per-model 403s and exits 0 regardless, so we re-check the v2w
+# file explicitly and bail when it's still missing (the failure mode that
+# definitely blocks training).
+#
+# STRICT_MODEL_DOWNLOAD=1 (default): bail if v2w is missing post-download.
+# STRICT_MODEL_DOWNLOAD=0          : warn and continue (useful for prepare-only /
+#                                    T5-only smoke testing without v2w access).
 V2W_MODEL_FILE="checkpoints/nvidia/Cosmos-Predict2-2B-Video2World/model-480p-10fps.pt"
 if [ ! -f "${V2W_MODEL_FILE}" ]; then
   echo "[cosmos2-yams] downloading model checkpoints..."
@@ -98,11 +105,16 @@ if [ ! -f "${V2W_MODEL_FILE}" ]; then
     --fps 10
 fi
 if [ ! -f "${V2W_MODEL_FILE}" ]; then
-  echo "[cosmos2-yams] ERROR: ${V2W_MODEL_FILE} still missing after download." >&2
+  echo "[cosmos2-yams] WARN: ${V2W_MODEL_FILE} still missing after download." >&2
   echo "[cosmos2-yams]   Likely the HF token in hf-secret has no access to" >&2
   echo "[cosmos2-yams]   nvidia/Cosmos-Predict2-2B-Video2World (gated repo)." >&2
   echo "[cosmos2-yams]   Accept terms at https://huggingface.co/nvidia/Cosmos-Predict2-2B-Video2World" >&2
-  exit 1
+  if [ "${STRICT_MODEL_DOWNLOAD:-1}" = "1" ]; then
+    echo "[cosmos2-yams] STRICT_MODEL_DOWNLOAD=1 — bailing." >&2
+    exit 1
+  else
+    echo "[cosmos2-yams] STRICT_MODEL_DOWNLOAD=0 — continuing; training will crash on model load." >&2
+  fi
 fi
 
 # ---------- 7. download dataset ----------
