@@ -74,7 +74,7 @@ source .venv/bin/activate
 # are idempotent: after the first run their targets are gone.
 sed -i 's/except subprocess.CalledProcessError as e:/except Exception as e:/' \
   scripts/prepare_lerobot_cosmos_dataset.py || true
-sed -i 's|e\.stderr\.decode()\[-300:\]|(e.stderr.decode() if hasattr(e, "stderr") and e.stderr else str(e))[-300:]|g' \
+sed -i "s|e\.stderr\.decode()\[-300:\]|(e.stderr.decode() if hasattr(e, 'stderr') and e.stderr else str(e))[-300:]|g" \
   scripts/prepare_lerobot_cosmos_dataset.py || true
 
 # ---------- 5. HF auth ----------
