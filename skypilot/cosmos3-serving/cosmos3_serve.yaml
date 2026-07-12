@@ -1,0 +1,88 @@
+# Serve an NVIDIA Cosmos 3 omnimodal world model with vLLM Omni as a SkyPilot service.
+#
+# Thin wrapper: launches vLLM Omni's prebuilt Cosmos3 container (vllm/vllm-omni:cosmos3) and
+# runs its official Cosmos3-Super serve command behind an OpenAI-compatible HTTP endpoint.
+# See github.com/vllm-project/vllm-omni/blob/main/recipes/cosmos3/Cosmos3-Super.md and README.md.
+#
+# The parallelism layout (cfg-parallel / ulysses / HSDP shard) is DERIVED from the GPU count
+# SkyPilot places on the node, so you only pick a GPU -- every entry in `accelerators:` below
+# (and any `--gpus X:N` override) just works, no SERVE_ARGS surgery.
+#
+# Endpoints once up (OpenAI-compatible):
+#   POST /v1/images/generations   text-to-image
+#   POST /v1/videos/sync          text/image/video-to-video (+ optional synced audio)
+#
+# Usage:
+#   # Cosmos 3 weights + guardrails are gated on Hugging Face -- accept the licenses for
+#   # nvidia/Cosmos3-Super and nvidia/Cosmos-1.0-Guardrail on your account, then:
+#   export HF_TOKEN=hf_...
+#   sky serve up -n cosmos3 cosmos3_serve.yaml --secret HF_TOKEN     # autoscaling endpoint
+#   sky serve status cosmos3 --endpoint                              # -> http://<ip>:<port>
+#   # Or a one-off cluster (the `service:` block is ignored by `sky launch`):
+#   sky launch -c cosmos3 cosmos3_serve.yaml --secret HF_TOKEN
+#
+#   # Any other GPU/count -- topology auto-derives, just name it:
+#   sky serve up -n cosmos3 cosmos3_serve.yaml --secret HF_TOKEN --gpus A100:8   # 8x A100-40GB
+#   sky serve up -n cosmos3 cosmos3_serve.yaml --secret HF_TOKEN --gpus H200:8   # high throughput
+#   # Single mid-size card (48-96 GB): Super won't fit; serve the smaller Nano tier instead:
+#   sky serve up -n cosmos3 cosmos3_serve.yaml --secret HF_TOKEN --gpus L40S:1 \
+#       --env MODEL=nvidia/Cosmos3-Nano
+#   # Turn off the (slow) safety guardrails, or trade VRAM for speed on tight cards:
+#   sky serve up -n cosmos3 cosmos3_serve.yaml --secret HF_TOKEN \
+#       --env SERVE_ARGS="--quantization fp8 --init-timeout 1800 --no-guardrails --enable-layerwise-offload"
+
+name: cosmos3-serve
+
+service:
+  # Cosmos3-Super is 64B and warms up guardrails + VAE, so give the first load a wide window;
+  # until /health responds the replica is PROVISIONING, not failed.
+  readiness_probe:
+    path: /health
+    initial_delay_seconds: 2400
+  replicas: 1
+
+resources:
+  infra: kubernetes                       # your GPU cluster; or `aws`/`gcp`/drop to auto-pick
+  # Any of these serve Super. fp8 weights (~64 GB) shard evenly across the GPUs, so pick by
+  # what you have: 2x 80GB-class (RTX Pro 6000 96GB / A100-80GB / H100 / H200 / B300) is the
+  # minimum for light traffic; 8x 40/48GB (A100-40GB / L40S) spreads weights to ~8 GB/GPU and
+  # also fits. SkyPilot picks the first available entry; override with `--gpus X:N`.
+  # NB: names must match what your cluster advertises (k8s label / `sky show-gpus`) --
+  # e.g. `RTXPro6000` may be `RTX6000-Blackwell`; adjust if `sky check` disagrees.
+  accelerators: {RTXPro6000:2, A100-80GB:2, H100:2, H200:2, B300:2, A100:8, L40S:8}
+  image_id: docker:vllm/vllm-omni:cosmos3      # prebuilt --omni engine + guardrails + codecs
+  ports: 8000
+  disk_size: 500                          # 64B bf16 weights (~130 GB) + assets + HF cache
+
+envs:
+  MODEL: nvidia/Cosmos3-Super             # HF repo id or local path (e.g. nvidia/Cosmos3-Nano)
+  HOST: "::"                              # dual-stack bind (IPv6 any; accepts IPv4-mapped too).
+                                          # Set 0.0.0.0 for IPv4-only.
+  # Non-topology serve flags (the cfg-parallel / ulysses / HSDP shard flags are derived from
+  # the GPU count in `run`). fp8 keeps peak VRAM in check for 720p video at bf16-level quality.
+  # Add --no-guardrails and/or --enable-layerwise-offload here as needed.
+  SERVE_ARGS: "--quantization fp8 --init-timeout 1800"
+  CFG_PARALLEL_SIZE: "2"                  # classifier-free-guidance parallel size (>=2 GPUs)
+
+secrets:
+  # Cosmos 3 weights AND the guardrail model are gated -- accept both licenses, then
+  # `export HF_TOKEN=...` and pass `--secret HF_TOKEN`.
+  HF_TOKEN: ""
+
+run: |
+  set -e
+  [ -n "${HF_TOKEN:-}" ] && export HF_TOKEN
+
+  # Derive the parallelism layout from the GPUs SkyPilot actually placed on this node:
+  #   #GPUs=8 -> --cfg-parallel-size 2 --ulysses-degree 4 --use-hsdp --hsdp-shard-size 8
+  #   #GPUs=2 -> --cfg-parallel-size 2                     --use-hsdp --hsdp-shard-size 2
+  #   #GPUs=1 -> --cfg-parallel-size 1  (single-GPU, e.g. Nano; no HSDP)
+  NUM_GPUS="${SKYPILOT_NUM_GPUS_PER_NODE:-1}"
+  [ "${NUM_GPUS}" -lt "${CFG_PARALLEL_SIZE}" ] && CFG_PARALLEL_SIZE="${NUM_GPUS}"
+  TOPO="--cfg-parallel-size ${CFG_PARALLEL_SIZE}"
+  ULYSSES=$(( NUM_GPUS / CFG_PARALLEL_SIZE ))
+  [ "${ULYSSES}" -gt 1 ]   && TOPO="${TOPO} --ulysses-degree ${ULYSSES}"
+  [ "${NUM_GPUS}" -gt 1 ]  && TOPO="${TOPO} --use-hsdp --hsdp-shard-size ${NUM_GPUS}"
+
+  echo ">>> Serving ${MODEL} on ${NUM_GPUS} GPU(s): vllm serve ${MODEL} --omni --host ${HOST} --port 8000 ${TOPO} ${SERVE_ARGS}"
+  exec vllm serve "${MODEL}" --omni --host "${HOST}" --port 8000 ${TOPO} ${SERVE_ARGS}
