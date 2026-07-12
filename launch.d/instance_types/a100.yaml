@@ -4,7 +4,7 @@ vcpus: 96
 memory: 1152Gi
 # Actual allocatable after k8s system reservations (estimated, update if observed)
 cpu_allocatable: 90
-memory_allocatable: 1100Gi
+memory_allocatable: 1024Gi
 gpu_model: A100
 gpu_memory: 320GB
 nodepool: a100-40
